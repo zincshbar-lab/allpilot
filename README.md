@@ -6,7 +6,7 @@
 
 ## The problem
 
-Doing things on NEAR means juggling many apps: near.com / NEAR Intents for swaps and bridges, Rhea (Ref) for trading and liquidity, Rhea Lending for borrowing, separate sites for staking, and launchpads like JustHoot and nearly.trade for memecoins. Each has its own UI, token lists full of copycat contracts, and different transaction formats. Paying someone across chains, or getting paid by a customer who holds a different token, is even harder. And handing all of that to an AI is scary unless something stops it from doing the wrong thing.
+Doing things on NEAR means juggling many apps: near.com / NEAR Intents for swaps and bridges, Rhea (Ref) for trading and liquidity, Rhea Lending for borrowing, separate sites for staking, and launchpads like JustHoot and nearly.trade for memecoins. Each has its own UI, token lists full of copycat contracts, and different transaction formats. Paying someone across chains, or getting paid by a customer who holds a different token, is even harder. Meanwhile anyone can launch a token in seconds, so it's hard to tell a real meme from a copycat or a serial rugger, and normal wallets don't even show what your memes are worth. And handing all of that to an AI is scary unless something stops it from doing the wrong thing.
 
 ## What Allpilot does
 
@@ -46,6 +46,7 @@ You chat with **Pip** in plain words. Pip fetches live quotes and turns your req
 - **Launchpad factories**: `v2-launchpad.justhoot.near` (`launch_meme`) and `nearlytrade.near` (`launch`), each minting a NEP-141 token and opening its Rhea DCL pool in one transaction, priced live with `get_launch_deposit` / `quote_launch`.
 - **Rhea Lending** (`contract.main.burrow.near`, formerly Burrow): supply / borrow / repay / withdraw through `ft_transfer_call` and `execute_with_pyth`.
 - **Staking**: liquid staking with LiNEAR (`linear-protocol.near`), Rhea rNEAR (`lst.rhealab.near`) and Meta Pool stNEAR (`meta-pool.near`), and native staking with any `*.poolv1.near` validator.
+- **FastNEAR public APIs** provide what a wallet holds, top holders per token, and full transaction history. The token analyzer uses them to find each token's launch transaction, its creator, and the creator's own first transaction (wallet age and funder). This is the **scam-detection** side of the AI Security & Defense track.
 - **NEAR AI Cloud** (OpenAI-compatible, private inference) is the chat brain, with tool calling. Clear commands (`buy …`, `swap …`, `pay …`, `launch … on …`, `add lp …`, `supply …`, `borrow …`, `stake … with …`, a pasted address, `my portfolio`) take an instant path that skips the LLM (~1 s). Every network call has a timeout, and if NEAR AI is unavailable Pip falls back to the command parser.
 - **HOT's NEAR Connect** handles wallet connection: HOT, Meteor, Intear, Ledger, MyNearWallet, OKX, NEAR Mobile, Trezu, Nightly, Hana, Ethereum wallets (MetaMask etc. via EVM-on-NEAR) and NEAR CLI. The wallet list ships with the app (`src/lib/wallet-manifest.json`) as a fallback, so the picker is never empty if GitHub is slow or blocked.
 
@@ -258,6 +259,8 @@ Payment links automatically use the deployment's address (or set `PUBLIC_SITE_UR
 - Liquid-staking exits use an instant Rhea swap (small spread shown on the card). The protocols' delayed 1:1 unstake isn't wired up yet.
 - Some wallets don't open inside iframes, so the embedded checkout widget works best when paying from another chain (deposit address) or opened as a full page.
 - Prices, APRs and health factors come from live on-chain/Rhea data at quote time and can move before you sign.
+- Token analysis gives risk *signals*, not verdicts. The creator is the signer of the token's launch transaction (or the launchpad's own record). If a wallet relayer signed it, or the token predates FastNEAR's indexed history, the creator/age shows as unknown. "Tokens launched" is exact for nearly.trade and otherwise counted from the creator's last 100 signed transactions. Top holders come from FastNEAR's top-100 list.
+- Portfolio prices for memes Rhea doesn't list are live pool quotes for 1 token, so very large bags would sell for less than the value shown.
 
 ## Build log
 
