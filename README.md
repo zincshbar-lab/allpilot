@@ -6,7 +6,7 @@
 
 ## The problem
 
-Doing things on NEAR means juggling different apps: near.com / NEAR Intents for swaps and bridges, Rhea (Ref) for AMM trades, and launchpads like JustHoot and nearly.trade for memecoins. Each one has its own UI, token lists full of copycat contracts, and different transaction formats. Paying someone across chains, or getting paid by a customer who holds a different token, is even harder.
+Doing things on NEAR means juggling many apps: near.com / NEAR Intents for swaps and bridges, Rhea (Ref) for trading and liquidity, Rhea Lending for borrowing, separate sites for staking, and launchpads like JustHoot and nearly.trade for memecoins. Each has its own UI, token lists full of copycat contracts, and different transaction formats. Paying someone across chains, or getting paid by a customer who holds a different token, is even harder. And handing all of that to an AI is scary unless something stops it from doing the wrong thing.
 
 ## What Allpilot does
 
@@ -42,7 +42,9 @@ You chat with **Pip** in plain words. Pip fetches live quotes and turns your req
 - **Rhea DCL** (`dclv2.ref-labs.near`): JustHoot (`*.justhoot.near`) and nearly.trade (`*.nearlytrade.near`) launch every memecoin as one-sided liquidity in a DCL pool. Allpilot reads `list_pools` / `quote` directly from the contract, so any new launch is buyable right away.
 - **Rhea classic AMM** (`v2.ref-finance.near`) via the public smart router for swaps, and `register_tokens` → deposit → `add_liquidity` for providing liquidity.
 - **Launchpad factories**: `v2-launchpad.justhoot.near` (`launch_meme`) and `nearlytrade.near` (`launch`), each minting a NEP-141 token and opening its Rhea DCL pool in one transaction, priced live with `get_launch_deposit` / `quote_launch`.
-- **NEAR AI Cloud** (OpenAI-compatible, private inference) is the chat brain, with tool calling. Clear commands (`buy …`, `swap …`, `pay …`, `launch … on …`, `add lp …`) take an instant path that skips the LLM (~1 s). Every network call has a timeout, and if NEAR AI is unavailable Pip falls back to the command parser.
+- **Rhea Lending** (`contract.main.burrow.near`, formerly Burrow): supply / borrow / repay / withdraw through `ft_transfer_call` and `execute_with_pyth`.
+- **Staking**: liquid staking with LiNEAR (`linear-protocol.near`), Rhea rNEAR (`lst.rhealab.near`) and Meta Pool stNEAR (`meta-pool.near`), and native staking with any `*.poolv1.near` validator.
+- **NEAR AI Cloud** (OpenAI-compatible, private inference) is the chat brain, with tool calling. Clear commands (`buy …`, `swap …`, `pay …`, `launch … on …`, `add lp …`, `supply …`, `borrow …`, `stake … with …`) take an instant path that skips the LLM (~1 s). Every network call has a timeout, and if NEAR AI is unavailable Pip falls back to the command parser.
 - **HOT's NEAR Connect** handles wallet connection: HOT, Meteor, Intear, Ledger, MyNearWallet, OKX, NEAR Mobile, Trezu, Nightly, Hana, Ethereum wallets (MetaMask etc. via EVM-on-NEAR) and NEAR CLI. The wallet list ships with the app (`src/lib/wallet-manifest.json`) as a fallback, so the picker is never empty if GitHub is slow or blocked.
 
 ### 💌 Pay with Intents (universal checkout)
@@ -92,6 +94,24 @@ Action amounts use each market's inner decimals (token decimals + `extra_decimal
 
 If you just say "stake 10 near", Pip asks liquid or validator. `staking_info` shows rates, popular validators and your staked balances.
 
+### 🧠 Pip's tools (what the AI can call)
+
+The LLM never builds transactions itself. It calls these server-side tools (`src/lib/agent.ts`), and each one returns an **action card** with live numbers, warnings and unsigned transactions:
+
+| Tool | Does |
+| --- | --- |
+| `swap_tokens` | Swap on NEAR Intents (default) or Rhea |
+| `bridge_assets` · `bridge_chains` | Bridge between NEAR and 20+ chains; list supported chains |
+| `trade_meme` · `trending_memes` | Buy/sell memecoins (JustHoot, nearly.trade, Rhea); verified + fresh launches |
+| `pay` · `create_payment_link` | Exact-amount payments to any chain; checkout links + widget |
+| `launch_token` | Launch a memecoin on JustHoot or nearly.trade (with uploaded picture) |
+| `add_liquidity` | Add liquidity to a Rhea classic pool |
+| `lending` · `lending_info` | Supply / borrow / repay / withdraw on Rhea Lending; markets, positions, health |
+| `stake` · `unstake` · `withdraw_unstaked` · `staking_info` | Liquid & validator staking; rates and your stakes |
+| `get_balances` | Your wallet balances |
+
+The system prompt makes Pip ask instead of guessing (launchpad, staking type, recipient), never substitute a different token, chain or recipient than the one asked for, and never give financial advice.
+
 ### 🛡️ Pilot Guard (agent safety)
 
 The AI only proposes. Before any wallet prompt, the browser checks every proposed transaction against rules the user controls, which the model can't change:
@@ -132,38 +152,51 @@ Open http://localhost:3000, then:
 10. Click **Earn yield**. Pip compares Rhea Lending APRs with staking options. Then type `supply 10 usdc`: you should see a 🏦 card with the live supply APR, "collateral: yes" and your health factor. Try `borrow 100000 usdc`: it's refused with the health factor it would cause.
 11. Type `stake 5 near with linear`. You should see a 🥩 card with the live LiNEAR rate and how much LiNEAR you'd get. `stake 3 near on astro-stakers.poolv1.near` shows the validator fee and the 2–3 day unstake note. Just `stake 10 near` makes Pip ask liquid or validator.
 
-**Without `NEAR_AI_API_KEY`** the app runs in *offline brain* mode: a small command parser that handles all the commands above, so everything stays reproducible. **With a key** (get one at https://cloud.near.ai), Pip understands free-form chat and calls the same tools.
+**Without `NEAR_AI_API_KEY`** the app runs in *offline brain* mode: a small command parser that handles every typed command above (swap, buy/sell, bridge, pay, payment link, launch, add lp, supply/borrow/repay/withdraw, stake/unstake), so everything stays reproducible. Only the free-form questions (like the **Earn yield** pill) need the key. **With a key** (get one at https://cloud.near.ai), Pip understands free-form chat and calls the same tools.
 
-Read-only smoke test (live mainnet quotes, builds unsigned transactions, signs nothing):
+Read-only smoke test of **every feature** (live mainnet quotes, builds the unsigned transactions, runs each through the Pilot Guard, signs nothing):
 
 ```bash
-npx tsx scripts/smoke.ts some-account.near
+npm run smoke                      # or: npm run smoke -- your-account.near
 ```
+
+Expected: `15 passed, 0 failed. Nothing was signed or sent.`
 
 ## Architecture
 
 ```
 src/
-  app/api/chat           POST: chat → agent → action cards
-  app/api/intents-status POST: 1Click status (+ optional deposit tx submit)
-  app/api/trending       POST: verified memes + fresh nearly.trade launches
-  app/api/pay/assets     POST: every token/chain a payer can use (from 1Click)
-  app/api/pay/quote      POST: exact-output payment quote → ActionCard
-  app/pay                checkout page (?embed=1 for the iframe widget)
-  lib/agent.ts           NEAR AI Cloud tool-calling loop + offline parser
-  lib/actions.ts         swap / bridge / memeTrade / trending → ActionCard
-  lib/pay.ts             pay / paymentLink / payableAssets (Pay with Intents)
-  lib/launch.ts          launchToken on JustHoot / nearly.trade (live cost quotes)
-  lib/liquidity.ts       addLiquidity on Rhea classic pools
-  lib/lending.ts         supply / borrow / repay / withdraw on Rhea Lending + health factor
-  lib/staking.ts         liquid & native staking, unstake, withdraw unstaked
-  lib/image.ts           in-browser image → small on-chain token picture
-  lib/intents.ts         NEAR Intents 1Click client
-  lib/rhea.ts            Rhea smart router + v2.ref-finance.near tx builder
-  lib/dcl.ts             Rhea DCL pool index, quotes, swap tx builder
-  lib/tokens.ts          symbol → contract resolver, verified list, copycat ranking
-  lib/guard.ts           Pilot Guard (runs client-side before signing)
-  components/            App, ActionCardView, Pip mascot, useWallet (NEAR Connect)
+  app/page.tsx              chat app (renders components/App)
+  app/pay/page.tsx          checkout page for payment links (?embed=1 for the iframe widget)
+  app/api/chat              POST: messages (+ wallet, + token picture) → agent → action cards
+  app/api/pay/assets        POST: every token/chain a payer can use (from 1Click)
+  app/api/pay/quote         POST: exact-output payment quote → action card
+  app/api/intents-status    POST: 1Click status (+ optional deposit tx submit)
+  app/api/trending          POST: verified memes + fresh nearly.trade launches
+  lib/agent.ts              NEAR AI Cloud tool-calling loop, system prompt, instant/offline command parser
+  lib/actions.ts            swap / bridge / memeTrade / trending / balances
+  lib/pay.ts                pay / paymentLink / payableAssets (Pay with Intents)
+  lib/launch.ts             launchToken on JustHoot / nearly.trade (live cost quotes)
+  lib/liquidity.ts          addLiquidity on Rhea classic pools
+  lib/lending.ts            supply / borrow / repay / withdraw on Rhea Lending + health factor
+  lib/staking.ts            liquid & native staking, unstake, withdraw unstaked
+  lib/intents.ts            NEAR Intents 1Click client
+  lib/rhea.ts               Rhea smart router + v2.ref-finance.near swap builder
+  lib/dcl.ts                Rhea DCL pool index, quotes, swap builder, nearly.trade launches
+  lib/tokens.ts             symbol → contract resolver, verified list, copycat ranking
+  lib/near.ts               read-only RPC (with fallback + timeouts), unit helpers
+  lib/tx.ts                 transaction/action builders shared by server and client
+  lib/cards.ts              ActionCard type (what the AI proposes)
+  lib/guard.ts              Pilot Guard (runs in the browser before every wallet prompt)
+  lib/image.ts              in-browser image → small on-chain token picture
+  lib/wallet-manifest.json  bundled NEAR Connect wallet list (fallback)
+  components/App.tsx        chat UI, 📎 upload, Guard settings, side panels
+  components/QuickActions   welcome-message pills (+ More/Less)
+  components/ActionCardView card UI, signing, Intents status tracking, checkout snippets
+  components/Checkout.tsx   payment-link checkout
+  components/useWallet.ts   NEAR Connect wallet hook
+  components/Pip.tsx        the mascot 🦉 · RichText.tsx: tiny safe markdown
+scripts/smoke.ts            read-only end-to-end check of every feature
 ```
 
 ## Configuration
@@ -177,10 +210,46 @@ src/
 | `NEAR_RPC_URLS` | fastnear, shitzuapes, drpc | Comma-separated mainnet RPCs |
 | `PUBLIC_SITE_URL` | request origin | Base URL used in payment links (set it when deployed) |
 
+## Deploy (Vercel)
+
+The live demo runs on Vercel. To deploy your own copy:
+
+```bash
+npx vercel link
+npx vercel env add NEAR_AI_API_KEY production   # paste your key when asked
+npx vercel deploy --prod
+```
+
+Payment links automatically use the deployment's address (or set `PUBLIC_SITE_URL`). API routes allow up to 60 s (`maxDuration`) for the first cold request, which builds the pool and price indexes.
+
+## Known limitations
+
+- Mainnet only (NEAR Intents has no testnet). A real wallet swap has been completed through Allpilot; the other features are verified up to the signing step by `npm run smoke`, so try them with tiny amounts first.
+- Adding liquidity supports Rhea **classic** pools, not concentrated (DCL) pools.
+- JustHoot keeps token descriptions/links off-chain, so add them on justhoot.fun after launching. Token pictures must fit ~7 KB (JustHoot) / 16 KB (nearly.trade); Allpilot shrinks them automatically.
+- Liquid-staking exits use an instant Rhea swap (small spread shown on the card). The protocols' delayed 1:1 unstake isn't wired up yet.
+- Some wallets don't open inside iframes, so the embedded checkout widget works best when paying from another chain (deposit address) or opened as a full page.
+- Prices, APRs and health factors come from live on-chain/Rhea data at quote time and can move before you sign.
+
+## Build log
+
+All built during NEAR HACKATHON (git history, `main`):
+
+1. Chat co-pilot with swaps (NEAR Intents, Rhea), bridging and memecoin trading (JustHoot, nearly.trade), Pilot Guard, cute UI
+2. All NEAR wallets in the connect picker (bundled wallet manifest)
+3. Instant command path and network timeouts (replies in ~1 s)
+4. Pay with Intents: exact-amount payments, checkout links, embeddable widget
+5. Hosted on Vercel
+6. Token launches with uploaded pictures, Rhea liquidity
+7. Quick-action pills
+8. Lend & borrow on Rhea Lending, NEAR staking (liquid + validators)
+
 ## Hackathon compliance notes
 
 - **Built in the window**: all code was written during NEAR HACKATHON (after the 2026-10-19 announcement). There was no earlier code.
-- **Libraries / boilerplate (Q-005)**: `create-next-app` (Next.js 16, React 19, Tailwind 4), `@hot-labs/near-connect`, `openai` SDK (pointed at NEAR AI Cloud), `zod`. Written with help from AI coding assistants (Claude Code).
+- **Libraries / boilerplate (Q-005)**: `create-next-app` (Next.js 16, React 19, Tailwind 4), `@hot-labs/near-connect` (wallets), `openai` SDK (pointed at NEAR AI Cloud), `tsx` (dev, smoke test). No other runtime dependencies. Written with help from AI coding assistants (Claude Code).
+- **References used** (formats were read, not copied): NEAR Intents 1Click OpenAPI; nearly.trade's verified contract source (`sam3dsol/Nearlytrade`); fastnear's open-source near.fm launch adapters for JustHoot; Burrow's official SDK (`burrowHQ/burrow-sdk-python`) for Rhea Lending; on-chain views of Rhea, LiNEAR, rNEAR and Meta Pool.
+- **Hosted demo (Q-012)**: https://allpilot.vercel.app, kept up through judging (at least 2026-11-18).
 - **Mainnet (Q-007)**: NEAR Intents has no testnet, so Allpilot runs on mainnet. Test with a separate dev account and tiny amounts. Quotes without a wallet are `dry: true`.
 - **Secrets**: keys live only in `.env.local` (git-ignored). Nothing is committed.
 - **License**: MIT (see `LICENSE`).
