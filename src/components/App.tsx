@@ -33,6 +33,8 @@ const SKILLS: { icon: string; title: string; desc: string; s: Suggestion }[] = [
   { icon: "🔗", title: "Payment links", desc: "A checkout link + website widget. Customers pay from any wallet or chain", s: { label: "", text: "payment link 10 usdc for order 42" } },
   { icon: "🚀", title: "Launch a token", desc: "Create your own memecoin on JustHoot or nearly.trade, with a picture (📎)", s: { label: "", fill: "launch My Token $TICKER on nearly", select: "My Token $TICKER" } },
   { icon: "💧", title: "Add liquidity", desc: "Provide liquidity to Rhea (Ref) pools and earn swap fees", s: { label: "", text: "add lp 1 near and usdc" } },
+  { icon: "🏦", title: "Lend & borrow", desc: "Supply to earn interest, borrow against it on Rhea Lending — with your health factor", s: { label: "", fill: "supply 10 usdc", select: "10" } },
+  { icon: "🥩", title: "Stake NEAR", desc: "Liquid (LiNEAR, rNEAR, stNEAR) or with a validator", s: { label: "", fill: "stake 5 near with linear", select: "5" } },
 ];
 
 type Trending = {
@@ -46,7 +48,7 @@ export default function App() {
     {
       role: "assistant",
       content:
-        "Hi, I'm Pip! 🦉✨ Tell me what you want to do in plain words. I can swap on NEAR Intents (like near.com), bridge to other chains, buy memecoins on JustHoot, nearly.trade and Ref, pay anyone on any chain, make payment links, launch your own memecoin (📎 to add its picture), and add liquidity on Ref. I only suggest — your wallet signs.",
+        "Hi, I'm Pip! 🦉✨ Tell me what you want to do in plain words. I can swap on NEAR Intents (like near.com), bridge to other chains, buy memecoins on JustHoot, nearly.trade and Ref, pay anyone on any chain, make payment links, launch your own memecoin (📎 to add its picture), add liquidity on Ref, lend & borrow, and stake your NEAR. I only suggest — your wallet signs.",
     },
   ]);
   const [input, setInput] = useState("");

@@ -14,7 +14,10 @@ export const DEFAULT_POLICY: GuardPolicy = { maxNearPerAction: 5, maxUsdPerActio
 const DEX = new Set(["v2.ref-finance.near", "dclv2.ref-labs.near"]);
 const ALLOWED_METHODS = new Set(["near_deposit", "storage_deposit", "ft_transfer_call", "ft_transfer"]);
 // Extra methods only allowed for one kind of card, and only on one specific contract.
-const KIND_METHODS: Record<string, { method: string; receiver: string }[]> = {
+const BURROW = "contract.main.burrow.near";
+const LST = /^(linear-protocol\.near|lst\.rhealab\.near|meta-pool\.near)$/;
+const VALIDATOR = /^[a-z0-9_-]+\.(poolv1|pool)\.near$/;
+const KIND_METHODS: Record<string, { method: string; receiver: string | RegExp }[]> = {
   launch: [
     { method: "launch_meme", receiver: "v2-launchpad.justhoot.near" },
     { method: "launch", receiver: "nearlytrade.near" },
@@ -23,7 +26,22 @@ const KIND_METHODS: Record<string, { method: string; receiver: string }[]> = {
     { method: "register_tokens", receiver: "v2.ref-finance.near" },
     { method: "add_liquidity", receiver: "v2.ref-finance.near" },
   ],
+  lend: [
+    { method: "execute_with_pyth", receiver: BURROW },
+    { method: "near_withdraw", receiver: "wrap.near" },
+  ],
+  stake: [
+    { method: "deposit_and_stake", receiver: LST },
+    { method: "deposit_and_stake", receiver: VALIDATOR },
+    { method: "unstake", receiver: VALIDATOR },
+    { method: "unstake_all", receiver: VALIDATOR },
+    { method: "withdraw_all", receiver: VALIDATOR },
+  ],
 };
+// Contracts a card may send tokens to with ft_transfer_call, beyond the DEXes.
+const KIND_FT_RECEIVERS: Record<string, string[]> = { lend: [BURROW] };
+// Larger storage deposits some protocols require (exact, per card kind).
+const KIND_STORAGE: Record<string, { receiver: string; max: bigint }[]> = { lend: [{ receiver: BURROW, max: 10n ** 23n }] }; // 0.1 NEAR
 const MAX_STORAGE_DEPOSIT = 10n ** 22n; // 0.01 NEAR — storage registration should never cost more
 
 export type GuardResult = { ok: true } | { ok: false; reasons: string[] };
@@ -48,7 +66,9 @@ export function checkCard(card: ActionCard, policy: GuardPolicy, accountId?: str
       }
       const { methodName, args, deposit: dep } = a.params;
       const ar = args as Record<string, string>;
-      const special = KIND_METHODS[card.kind]?.some((k) => k.method === methodName && k.receiver === tx.receiverId);
+      const special = KIND_METHODS[card.kind]?.some(
+        (k) => k.method === methodName && (typeof k.receiver === "string" ? k.receiver === tx.receiverId : k.receiver.test(tx.receiverId)),
+      );
       if (special) continue;
       if (!ALLOWED_METHODS.has(methodName)) {
         reasons.push(`Blocked method ${methodName} on ${tx.receiverId}.`);
@@ -56,10 +76,11 @@ export function checkCard(card: ActionCard, policy: GuardPolicy, accountId?: str
       }
       if (methodName === "near_deposit" && tx.receiverId !== "wrap.near") reasons.push(`near_deposit to unexpected contract ${tx.receiverId}.`);
       if (methodName === "storage_deposit") {
-        if (BigInt(dep) > MAX_STORAGE_DEPOSIT) reasons.push(`Storage deposit on ${tx.receiverId} is suspiciously large.`);
+        const cap = KIND_STORAGE[card.kind]?.find((k) => k.receiver === tx.receiverId)?.max ?? MAX_STORAGE_DEPOSIT;
+        if (BigInt(dep) > cap) reasons.push(`Storage deposit on ${tx.receiverId} is suspiciously large.`);
         if (ar.account_id !== accountId && ar.account_id !== deposit && ar.account_id !== payee) reasons.push(`Storage deposit for unknown account ${ar.account_id}.`);
       }
-      if (methodName === "ft_transfer_call" && !DEX.has(ar.receiver_id)) reasons.push(`Tokens would go to ${ar.receiver_id}, which is not a known DEX.`);
+      if (methodName === "ft_transfer_call" && !DEX.has(ar.receiver_id) && !KIND_FT_RECEIVERS[card.kind]?.includes(ar.receiver_id)) reasons.push(`Tokens would go to ${ar.receiver_id}, which is not a known DEX.`);
       if (methodName === "ft_transfer" && ar.receiver_id !== deposit && ar.receiver_id !== payee)
         reasons.push(`Plain transfer to ${ar.receiver_id} is neither the NEAR Intents deposit address nor the payee you named.`);
     }

@@ -7,6 +7,8 @@ import { bridge, getBalances, listBridgeChains, memeTrade, swap, trendingMemes }
 import { pay, paymentLink } from "./pay";
 import { launchToken, normalizeLaunchpad } from "./launch";
 import { addLiquidity } from "./liquidity";
+import { borrow, lendingOverview, repay, supply, withdrawSupply } from "./lending";
+import { stake, stakingOverview, unstake, withdrawUnstaked } from "./staking";
 
 const SYSTEM = `You are Pip, the cheerful co-pilot inside Allpilot — a cute AI trading buddy on NEAR.
 You help the user:
@@ -16,7 +18,9 @@ You help the user:
 4. pay anyone an exact amount on any chain, paying with whatever token they hold ("Pay with Intents"),
 5. create payment links / a checkout widget so others can pay them from any wallet or chain,
 6. launch a brand-new memecoin on JustHoot or nearly.trade (with a token picture the user uploads),
-7. add liquidity to Rhea (Ref) classic pools.
+7. add liquidity to Rhea (Ref) classic pools,
+8. lend & borrow on Rhea Lending (formerly Burrow): supply, borrow, repay, withdraw — always with the health factor,
+9. stake NEAR: liquid staking (LiNEAR, Rhea rNEAR, Meta Pool stNEAR — tradable, instant exit via swap) or native staking with a validator (unstake takes ~2–3 days).
 
 Rules:
 - ALWAYS use tools to get quotes. Never invent prices, amounts, contracts or addresses.
@@ -32,6 +36,8 @@ Rules:
   A first buy (dev buy) is optional. If no picture is uploaded yet, tell them they can tap 📎 to add one before signing.
   Launches are permanent — make sure the name and ticker are what they want.
 - Liquidity: you need two tokens and the amount of the first; the second is matched to the pool ratio. Mention impermanent loss briefly.
+- Lending: supplying uses the asset as collateral by default. Before borrowing, the user needs collateral; tool errors explain health problems — relay them. Mention liquidation risk briefly when borrowing.
+- Staking: if they don't say where, ask "liquid (LiNEAR / rNEAR / stNEAR — keep a tradable token, exit instantly) or a validator (native, ~2–3 day unstake)?" Use lending_info / staking_info for rates and positions instead of guessing.
 - NEVER substitute a different token, chain, launchpad or recipient than the user asked for. If what they asked isn't possible, say so and ask what they'd like instead.
 - Not financial advice. If asked what to buy, you can show trending/verified tokens but don't recommend.`;
 
@@ -187,6 +193,64 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "lending",
+      description: "Rhea Lending (Burrow): supply (lend, earns interest, used as collateral), borrow against collateral, repay a loan, or withdraw supplied tokens.",
+      parameters: {
+        type: "object",
+        properties: {
+          action: { type: "string", enum: ["supply", "borrow", "repay", "withdraw"] },
+          token: { type: "string", description: "e.g. USDC, NEAR, USDT, ETH, LiNEAR" },
+          amount: { type: "string", description: "Human amount. Omit with all=true for repay/withdraw everything." },
+          all: { type: "boolean" },
+          as_collateral: { type: "boolean", description: "supply only; default true" },
+        },
+        required: ["action", "token"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "lending_info",
+      description: "Rhea Lending markets (supply/borrow APRs) and the user's supplied/borrowed balances and health factor.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "stake",
+      description: "Stake NEAR. provider = 'linear' | 'rnear' | 'stnear' (liquid) or a validator pool id like astro-stakers.poolv1.near (native).",
+      parameters: { type: "object", properties: { amount: { type: "string" }, provider: { type: "string" } }, required: ["amount", "provider"] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "unstake",
+      description: "Unstake: liquid tokens (linear/rnear/stnear) are swapped back to NEAR instantly on Rhea; validator pools start a ~2–3 day unstake.",
+      parameters: { type: "object", properties: { provider: { type: "string" }, amount: { type: "string" }, all: { type: "boolean" } }, required: ["provider"] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "withdraw_unstaked",
+      description: "Withdraw NEAR that finished unstaking from a validator pool.",
+      parameters: { type: "object", properties: { validator: { type: "string" } }, required: ["validator"] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "staking_info",
+      description: "Liquid staking rates (LiNEAR, rNEAR, stNEAR), popular validators with fees, and the user's staked balances.",
+      parameters: { type: "object", properties: { validators: { type: "array", items: { type: "string" } } } },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "bridge_chains",
       description: "List chains NEAR Intents supports, optionally for one token symbol.",
       parameters: { type: "object", properties: { symbol: { type: "string" } } },
@@ -269,6 +333,36 @@ async function runTool(name: string, args: Record<string, unknown>, ctx: Ctx): P
       ctx.cards.push(c);
       return cardSummary(c);
     }
+    case "lending": {
+      const a = String(args.action);
+      const base = { token: String(args.token), amount: args.amount ? String(args.amount) : undefined, all: args.all === true, accountId: ctx.accountId };
+      const c =
+        a === "supply" ? await supply({ ...base, amount: base.amount ?? "", collateral: args.as_collateral !== false })
+        : a === "borrow" ? await borrow({ ...base, amount: base.amount ?? "" })
+        : a === "repay" ? await repay(base)
+        : await withdrawSupply(base);
+      ctx.cards.push(c);
+      return cardSummary(c);
+    }
+    case "lending_info":
+      return lendingOverview(ctx.accountId);
+    case "stake": {
+      const c = await stake({ amount: String(args.amount), provider: String(args.provider), accountId: ctx.accountId });
+      ctx.cards.push(c);
+      return cardSummary(c);
+    }
+    case "unstake": {
+      const c = await unstake({ provider: String(args.provider), amount: args.amount ? String(args.amount) : undefined, all: args.all === true, accountId: ctx.accountId });
+      ctx.cards.push(c);
+      return cardSummary(c);
+    }
+    case "withdraw_unstaked": {
+      const c = await withdrawUnstaked({ validator: String(args.validator), accountId: ctx.accountId });
+      ctx.cards.push(c);
+      return cardSummary(c);
+    }
+    case "staking_info":
+      return stakingOverview(ctx.accountId, (args.validators as string[]) ?? []);
     case "bridge_chains":
       return { chains: await listBridgeChains(args.symbol ? String(args.symbol) : undefined) };
   }
@@ -342,6 +436,40 @@ export async function offline(messages: ChatMessage[], ctx: Ctx, opts?: { trades
       await runTool("launch_token", { launchpad: pad, name: name.trim(), symbol, first_buy_near: firstBuy }, ctx);
       return reply(`Launch card ready 🚀${ctx.icon ? "" : " Tip: tap 📎 to add a token picture, then ask again."} Check the name and ticker — launches are permanent.`);
     }
+    // withdraw unstaked near from astro-stakers.poolv1.near
+    if ((m = text.match(/withdraw\s+(?:my\s+)?unstaked(?:\s+near)?\s+(?:from\s+)?([a-z0-9_-]+\.(?:poolv1|pool)\.near)/))) {
+      await runTool("withdraw_unstaked", { validator: m[1] }, ctx);
+      return reply("Withdraw card ready 🥩 Your unlocked NEAR goes back to your wallet.");
+    }
+    // stake 5 near with linear | on astro-stakers.poolv1.near
+    if ((m = text.match(new RegExp(`^stake\\s+${NUM}\\s*near\\s+(?:with|on|into|to|via|using)\\s+([a-z0-9._ -]+?)\\s*$`)))) {
+      await runTool("stake", { amount: m[1], provider: m[2] }, ctx);
+      return reply("Staking card ready 🥩 Rewards start accruing once it's staked.");
+    }
+    // unstake [all|2] linear | unstake 2 near from pool.poolv1.near
+    if ((m = text.match(/^unstake\s+(all|\d+(?:\.\d+)?)?\s*(?:near\s+)?(?:my\s+)?(?:from\s+)?([a-z0-9._-]+)\s*$/))) {
+      const [, amt, prov] = m;
+      await runTool("unstake", { provider: prov, amount: amt && amt !== "all" ? amt : undefined, all: !amt || amt === "all" }, ctx);
+      return reply("Unstake card ready 🥩");
+    }
+    // supply|lend 10 usdc   ·   borrow 5 usdc   ·   repay all usdc   ·   withdraw all usdc from lending
+    if ((m = text.match(new RegExp(`^(?:supply|lend)\\s+${NUM}\\s+${TOK}`)))) {
+      await runTool("lending", { action: "supply", amount: m[1], token: m[2] }, ctx);
+      return reply("Supply card ready 🏦 It earns interest and counts as collateral.");
+    }
+    if ((m = text.match(new RegExp(`^borrow\\s+${NUM}\\s+${TOK}`)))) {
+      await runTool("lending", { action: "borrow", amount: m[1], token: m[2] }, ctx);
+      return reply("Borrow card ready 🏦 Keep an eye on your health factor — below 1.0 means liquidation.");
+    }
+    if ((m = text.match(new RegExp(`^repay\\s+(?:(all|${NUM.slice(1, -1)})\\s+)?(?:my\\s+)?${TOK}`)))) {
+      const amt = m[1];
+      await runTool("lending", { action: "repay", token: m[2], amount: amt && amt !== "all" ? amt : undefined, all: !amt || amt === "all" }, ctx);
+      return reply("Repay card ready 🏦");
+    }
+    if ((m = text.match(new RegExp(`^withdraw\\s+(all|${NUM.slice(1, -1)})\\s+${TOK}\\s+from\\s+(?:rhea\\s+)?(?:lending|burrow)`)))) {
+      await runTool("lending", { action: "withdraw", token: m[2], amount: m[1] !== "all" ? m[1] : undefined, all: m[1] === "all" }, ctx);
+      return reply("Withdraw card ready 🏦");
+    }
     // add lp 1 near and usdc [on ref]   |   add liquidity 1 near + usdc
     if ((m = text.match(new RegExp(`add\\s+(?:lp|liquidity)\\s+(?:with\\s+|of\\s+)?${NUM}\\s+${TOK}\\s+(?:and|\\+|with|/)\\s+${TOK}`)))) {
       await runTool("add_liquidity", { amount_a: m[1], token_a: m[2], token_b: m[3] }, ctx);
@@ -402,7 +530,7 @@ export async function offline(messages: ChatMessage[], ctx: Ctx, opts?: { trades
       return reply(b.map((x) => `${x.symbol}: ${x.amount}`).join(" · ") || "No balances found.");
     }
     return reply(
-      `I'm in offline mode (no NEAR AI key set), so I understand simple commands:\n• swap 1 near to usdc\n• swap 5 usdc to near on ref\n• buy 0.2 near of hoot\n• sell 1000 nearly\n• bridge 5 usdc from near to base 0xYourAddress\n• pay alice.near 5 usdc (add "with near" to pay in NEAR)\n• payment link 10 usdc for order 42\n• launch Pip Coin $PIP on hoot (tap 📎 to add a picture)\n• add lp 1 near and usdc\n• trending memes · balance`,
+      `I'm in offline mode (no NEAR AI key set), so I understand simple commands:\n• swap 1 near to usdc\n• swap 5 usdc to near on ref\n• buy 0.2 near of hoot\n• sell 1000 nearly\n• bridge 5 usdc from near to base 0xYourAddress\n• pay alice.near 5 usdc (add "with near" to pay in NEAR)\n• payment link 10 usdc for order 42\n• launch Pip Coin $PIP on hoot (tap 📎 to add a picture)\n• add lp 1 near and usdc\n• supply 10 usdc · borrow 5 usdc · repay all usdc\n• stake 5 near with linear · unstake all linear\n• trending memes · balance`,
     );
   } catch (e) {
     if (opts?.tradesOnly) return null; // let the LLM explain or recover

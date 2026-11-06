@@ -3,11 +3,11 @@
 
 import type { PlannedTx } from "./tx";
 
-export type Venue = "near-intents" | "rhea" | "rhea-dcl" | "direct";
+export type Venue = "near-intents" | "rhea" | "rhea-dcl" | "direct" | "rhea-lending" | "staking";
 
 export type ActionCard = {
   id: string;
-  kind: "swap" | "bridge" | "meme" | "pay" | "link" | "launch" | "lp" | "info";
+  kind: "swap" | "bridge" | "meme" | "pay" | "link" | "launch" | "lp" | "lend" | "stake" | "info";
   title: string;
   venue?: Venue;
   launchpad?: "justhoot" | "nearly" | null;

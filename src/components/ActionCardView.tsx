@@ -9,6 +9,8 @@ const VENUE: Record<string, { label: string; cls: string; icon: string }> = {
   rhea: { label: "Rhea · Ref", cls: "bg-mint-soft", icon: "🌊" },
   "rhea-dcl": { label: "Rhea DCL pool", cls: "bg-mint-soft", icon: "🌊" },
   direct: { label: "Direct transfer", cls: "bg-lav-soft", icon: "💸" },
+  "rhea-lending": { label: "Rhea Lending", cls: "bg-sky-soft", icon: "🏦" },
+  staking: { label: "Staking", cls: "bg-lav-soft", icon: "🥩" },
 };
 const KIND: Record<ActionCard["kind"], { icon: string; tint: string }> = {
   swap: { icon: "🔄", tint: "bg-lav-soft" },
@@ -18,6 +20,8 @@ const KIND: Record<ActionCard["kind"], { icon: string; tint: string }> = {
   link: { icon: "🔗", tint: "bg-pink-soft" },
   launch: { icon: "🚀", tint: "bg-butter-soft" },
   lp: { icon: "💧", tint: "bg-mint-soft" },
+  lend: { icon: "🏦", tint: "bg-sky-soft" },
+  stake: { icon: "🥩", tint: "bg-lav-soft" },
   info: { icon: "💡", tint: "bg-pink-soft" },
 };
 

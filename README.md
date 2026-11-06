@@ -29,6 +29,12 @@ You chat with **Pip** in plain words. Pip fetches live quotes and turns your req
 | 📎 + `launch Pip Coin $PIP on hoot` | Launches a new memecoin with your uploaded picture: token + Rhea DCL pool in one tx | JustHoot `launch_meme` |
 | 📎 + `launch Owl $OWL on nearly with first buy 0.2 near` | Same on nearly.trade, with description/links on-chain and an optional first buy | nearly.trade `launch` |
 | `add lp 1 near and usdc` | Picks the deepest classic pool, matches the pool ratio, then register → deposit → `add_liquidity` | Rhea / Ref |
+| `supply 10 usdc` | Lends USDC (earns the supply APR) and uses it as collateral; shows your health factor | Rhea Lending |
+| `borrow 5 usdc` | Borrows against your collateral via `execute_with_pyth`; refuses anything that would leave health < 1.05 | Rhea Lending |
+| `repay all usdc` · `withdraw all usdc from lending` | Repays debt from your wallet (with a tiny interest buffer) or withdraws supplied tokens, health-checked | Rhea Lending |
+| `stake 5 near with linear` (or `rnear`, `stnear`) | Liquid staking via `deposit_and_stake`; shows the live share price and tokens you'll get | LiNEAR / Rhea rNEAR / Meta Pool |
+| `stake 3 near on astro-stakers.poolv1.near` | Native staking with a validator (fee shown, high fees flagged) | Validator pool |
+| `unstake all linear` · `unstake 1 near from <pool>` | Liquid: instant swap back to NEAR on Rhea (spread vs fair value shown). Native: `unstake`, then `withdraw my unstaked near from <pool>` after ~2–3 days | Rhea / validator |
 
 ### How NEAR fits in
 
@@ -69,6 +75,23 @@ Both mint a fixed 1B supply and open a Rhea DCL pool in the same transaction. An
 
 `add lp 1 near and usdc` finds the deepest **classic** pool for the pair (Rhea's top-pools API, falling back to scanning `get_pools`). It reads live reserves, matches the second amount to the pool ratio, checks your balances, and builds: `storage_deposit` (first time) + `register_tokens` → `ft_transfer_call` of each token to `v2.ref-finance.near` (wrapping NEAR first) → `add_liquidity`. Anything the pool doesn't take stays in your Rhea balance. Pip warns about impermanent loss.
 
+### 🏦 Lend & borrow (Rhea Lending, formerly Burrow)
+
+`contract.main.burrow.near`, with call formats from Burrow's official SDK:
+- **Supply:** `ft_transfer_call` with `{"Execute":{"actions":[{"IncreaseCollateral":…}]}}`. Native NEAR is wrapped first, and a first-time user gets the 0.1 NEAR (refundable) account storage deposit.
+- **Borrow:** `execute_with_pyth({actions:[Borrow, Withdraw]})`. The protocol has switched to the Pyth oracle path, and wNEAR is unwrapped back to NEAR.
+- **Repay:** `ft_transfer_call` with a `Repay` action.
+- **Withdraw:** `DecreaseCollateral` + `Withdraw` via `execute_with_pyth`.
+
+Action amounts use each market's inner decimals (token decimals + `extra_decimals`). Before building a borrow or withdraw, Pip computes your **health factor** the way the protocol does: Σ collateral × volatility ÷ Σ debt ÷ volatility, using Rhea prices. It refuses anything that would end below 1.05 and warns below 1.5. `lending_info` lists all live markets with supply/borrow APRs and your positions.
+
+### 🥩 Stake NEAR
+
+- **Liquid staking:** LiNEAR (`linear-protocol.near`), Rhea rNEAR (`lst.rhealab.near`) or Meta Pool stNEAR (`meta-pool.near`) via `deposit_and_stake`. You get a tradable token at the live share price (e.g. 1 LiNEAR ≈ 1.43 NEAR). To exit instantly, Pip swaps it back on Rhea and shows the spread vs. its staked value.
+- **Native staking:** any `*.poolv1.near` / `*.pool.near` validator, showing its fee (warns above 20%). `unstake` / `unstake_all` start a ~4-epoch (≈2–3 days) unlock, then `withdraw_all`.
+
+If you just say "stake 10 near", Pip asks liquid or validator. `staking_info` shows rates, popular validators and your staked balances.
+
 ### 🛡️ Pilot Guard (agent safety)
 
 The AI only proposes. Before any wallet prompt, the browser checks every proposed transaction against rules the user controls, which the model can't change:
@@ -78,6 +101,7 @@ The AI only proposes. Before any wallet prompt, the browser checks every propose
 - `ft_transfer_call` may only target known DEX contracts (`v2.ref-finance.near`, `dclv2.ref-labs.near`)
 - plain `ft_transfer` (and native NEAR transfers) may only go to the 1Click deposit address from that quote, or to the payee the user named in a payment
 - storage deposits capped at 0.01 NEAR and only for you or the deposit address
+- lending cards may only call `execute_with_pyth` on `contract.main.burrow.near`, send tokens to it, and pay its 0.1 NEAR account storage; staking cards may only call `deposit_and_stake` / `unstake` / `unstake_all` / `withdraw_all` on the three liquid-staking contracts or validator pools
 - `launch_meme` / `launch` are only allowed on launch cards and only on the two launchpad factories; `register_tokens` / `add_liquidity` only on liquidity cards and only on `v2.ref-finance.near`
 - expired quotes can't be signed
 
@@ -95,7 +119,7 @@ npm run dev
 
 Open http://localhost:3000, then:
 
-0. Under Pip's welcome message you'll see quick-action pills (**Launch a token**, **Portfolio**, **Trending memes**, **Swap**, **Pay a friend**, **More**). Click **More** to reveal the rest.
+0. Under Pip's welcome message you'll see quick-action pills (**Launch a token**, **Portfolio**, **Earn yield**, **Swap**, **Pay a friend**, **More**). Click **More** to reveal the rest.
 1. Click **More → Buy HOOT**. You should see a card with the verified contract `hoot-8ecf65.launchpad.justhoot.near`, a live Rhea DCL quote, and a warning about lookalike tokens.
 2. Click the **Swap** pill (sends `swap 1 near to usdc`). You should see a NEAR Intents quote (est. output, minimum, ~time).
 3. Type `bridge 5 usdc from near to base 0x2527D02599Ba641c19FEa793cD0F167589a0f10D`. You should see a bridge card with the recipient filled in.
@@ -105,6 +129,8 @@ Open http://localhost:3000, then:
 7. Click **Open checkout ↗** on that card. Pick **Chain: Base** and **Token: ETH**, paste any Base address as the refund address, and click **Get quote in ETH**. You should see the exact ETH to send and a deposit address, while the receiver still gets exactly 10 USDC on NEAR.
 8. Tap **📎**, pick any picture, then type `launch Pip Coin $PIP on nearly`. You should see a 🚀 launch card with your picture, cost (~0.09 NEAR) and a permanent-launch warning. Try `launch Pip Coin $P on hoot` and see the ticker rule rejected.
 9. Type `add lp 1 near and usdc`. You should see a 💧 card with the Rhea pool, its TVL, the USDC amount matched to the pool ratio, and 4 steps.
+10. Click **Earn yield**. Pip compares Rhea Lending APRs with staking options. Then type `supply 10 usdc`: you should see a 🏦 card with the live supply APR, "collateral: yes" and your health factor. Try `borrow 100000 usdc`: it's refused with the health factor it would cause.
+11. Type `stake 5 near with linear`. You should see a 🥩 card with the live LiNEAR rate and how much LiNEAR you'd get. `stake 3 near on astro-stakers.poolv1.near` shows the validator fee and the 2–3 day unstake note. Just `stake 10 near` makes Pip ask liquid or validator.
 
 **Without `NEAR_AI_API_KEY`** the app runs in *offline brain* mode: a small command parser that handles all the commands above, so everything stays reproducible. **With a key** (get one at https://cloud.near.ai), Pip understands free-form chat and calls the same tools.
 
@@ -129,6 +155,8 @@ src/
   lib/pay.ts             pay / paymentLink / payableAssets (Pay with Intents)
   lib/launch.ts          launchToken on JustHoot / nearly.trade (live cost quotes)
   lib/liquidity.ts       addLiquidity on Rhea classic pools
+  lib/lending.ts         supply / borrow / repay / withdraw on Rhea Lending + health factor
+  lib/staking.ts         liquid & native staking, unstake, withdraw unstaked
   lib/image.ts           in-browser image → small on-chain token picture
   lib/intents.ts         NEAR Intents 1Click client
   lib/rhea.ts            Rhea smart router + v2.ref-finance.near tx builder
