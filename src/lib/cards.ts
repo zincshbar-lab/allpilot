@@ -3,11 +3,11 @@
 
 import type { PlannedTx } from "./tx";
 
-export type Venue = "near-intents" | "rhea" | "rhea-dcl";
+export type Venue = "near-intents" | "rhea" | "rhea-dcl" | "direct";
 
 export type ActionCard = {
   id: string;
-  kind: "swap" | "bridge" | "meme" | "info";
+  kind: "swap" | "bridge" | "meme" | "pay" | "link" | "info";
   title: string;
   venue?: Venue;
   launchpad?: "justhoot" | "nearly" | null;
@@ -25,6 +25,10 @@ export type ActionCard = {
     depositMemo?: string;
     externalDeposit?: { chain: string; symbol: string; amount: string };
   };
+  /** Payments: the recipient the user named. The Pilot Guard allows plain transfers only to this account. */
+  payment?: { recipient: string; chain: string; memo?: string };
+  /** Payment links: shareable checkout URL + embed snippets. */
+  checkout?: { url: string; iframe: string; button: string };
   needsWallet?: boolean;
   links?: { label: string; href: string }[];
   expiresAt?: number;

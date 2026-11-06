@@ -8,11 +8,14 @@ const VENUE: Record<string, { label: string; cls: string; icon: string }> = {
   "near-intents": { label: "NEAR Intents", cls: "bg-sky-soft", icon: "🌐" },
   rhea: { label: "Rhea · Ref", cls: "bg-mint-soft", icon: "🌊" },
   "rhea-dcl": { label: "Rhea DCL pool", cls: "bg-mint-soft", icon: "🌊" },
+  direct: { label: "Direct transfer", cls: "bg-lav-soft", icon: "💸" },
 };
 const KIND: Record<ActionCard["kind"], { icon: string; tint: string }> = {
   swap: { icon: "🔄", tint: "bg-lav-soft" },
   bridge: { icon: "🌈", tint: "bg-sky-soft" },
   meme: { icon: "🐸", tint: "bg-butter-soft" },
+  pay: { icon: "💌", tint: "bg-pink-soft" },
+  link: { icon: "🔗", tint: "bg-pink-soft" },
   info: { icon: "💡", tint: "bg-pink-soft" },
 };
 
@@ -100,9 +103,9 @@ export function ActionCardView({
 
   return (
     <div className="card pop mt-3 overflow-hidden">
-      <div className={`flex items-center gap-2 px-4 py-3 ${kind.tint}`}>
+      <div className={`flex flex-wrap items-center gap-2 px-4 py-3 ${kind.tint}`}>
         <span className="text-xl" aria-hidden>{kind.icon}</span>
-        <h3 className="font-semibold leading-tight flex-1 min-w-0 break-words">{card.title}</h3>
+        <h3 className="font-semibold leading-tight flex-1 min-w-[10rem] break-words">{card.title}</h3>
         {venue && (
           <span className={`text-xs font-semibold rounded-full px-2.5 py-1 border-2 border-line ${venue.cls} whitespace-nowrap`}>
             {venue.icon} {venue.label}
@@ -114,7 +117,7 @@ export function ActionCardView({
         {card.lines.map((l) => (
           <div key={l.label} className="contents">
             <dt className="text-ink-soft">{l.label}</dt>
-            <dd className={`text-right font-medium ${l.label === "Contract" || l.label === "Recipient" ? "font-mono text-xs break-all" : "break-words"}`}>{l.value}</dd>
+            <dd className={`text-right font-medium ${["Contract", "Recipient", "Pays to", "Token"].includes(l.label) ? "font-mono text-xs break-all" : "break-words"}`}>{l.value}</dd>
           </div>
         ))}
       </dl>
@@ -126,6 +129,8 @@ export function ActionCardView({
           ))}
         </ul>
       )}
+
+      {card.checkout && <CheckoutSnippets checkout={card.checkout} />}
 
       {external && card.intents && (
         <div className="mx-4 mb-3 rounded-2xl bg-sky-soft px-3 py-3 text-sm">
@@ -163,7 +168,7 @@ export function ActionCardView({
         ))}
       </div>
 
-      {(signable || external) && (
+      {signable && (
         <div className={`mx-4 mb-4 rounded-2xl px-3 py-2 text-xs ${guard.ok ? "bg-mint-soft" : "bg-danger-soft"}`}>
           <b>🛡️ Pilot Guard:</b>{" "}
           {guard.ok ? `checks passed — only known contracts, within your ${policy.maxNearPerAction} NEAR / $${policy.maxUsdPerAction} limits.` : guard.reasons.join(" ")}
@@ -183,6 +188,38 @@ export function ActionCardView({
       )}
       {status === "failed" && <p className="mx-4 mb-4 text-xs text-danger">The swap was {intentState?.toLowerCase()} — funds go back to your refund address.</p>}
       {error && <p className="mx-4 mb-4 text-xs text-danger break-words">Wallet said: {error}</p>}
+    </div>
+  );
+}
+
+function CopyRow({ label, value, mono = true }: { label: string; value: string; mono?: boolean }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div>
+      <p className="text-xs text-ink-soft mb-1">{label}</p>
+      <div className="flex items-start gap-2">
+        <code className={`flex-1 min-w-0 break-all rounded-xl bg-surface px-2 py-1.5 text-[11px] border-2 border-line max-h-24 overflow-y-auto ${mono ? "font-mono" : ""}`}>{value}</code>
+        <button
+          className="btn bg-surface border-2 border-line px-3 py-1.5 text-xs shrink-0"
+          onClick={() => {
+            navigator.clipboard?.writeText(value);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          }}
+        >
+          {copied ? "Copied ✓" : "Copy"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CheckoutSnippets({ checkout }: { checkout: NonNullable<ActionCard["checkout"]> }) {
+  return (
+    <div className="mx-4 mb-3 rounded-2xl bg-pink-soft px-3 py-3 space-y-3">
+      <CopyRow label="Share this link — the payer picks any token on any chain" value={checkout.url} />
+      <CopyRow label="Embed on a website (checkout widget)" value={checkout.iframe} />
+      <CopyRow label="…or a “Pay with Intents” button" value={checkout.button} />
     </div>
   );
 }

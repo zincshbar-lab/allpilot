@@ -64,6 +64,8 @@ export type QuoteInput = {
   refundTo: string;
   slippageBps: number;
   dry: boolean;
+  /** EXACT_OUTPUT = the recipient gets exactly `amount` (payments); payer's input carries the slippage buffer. */
+  swapType?: "EXACT_INPUT" | "EXACT_OUTPUT";
 };
 
 export type IntentsQuote = {
@@ -74,6 +76,7 @@ export type IntentsQuote = {
     amountOut: string;
     amountOutFormatted: string;
     amountOutUsd?: string;
+    minAmountIn?: string;
     minAmountOut: string;
     timeEstimate?: number;
     depositAddress?: string;
@@ -88,7 +91,7 @@ export type IntentsQuote = {
 export async function intentsQuote(q: QuoteInput): Promise<IntentsQuote> {
   const body = {
     dry: q.dry,
-    swapType: "EXACT_INPUT",
+    swapType: q.swapType ?? "EXACT_INPUT",
     slippageTolerance: q.slippageBps,
     originAsset: q.originAsset,
     depositType: "ORIGIN_CHAIN",

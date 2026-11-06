@@ -27,8 +27,14 @@ export function checkCard(card: ActionCard, policy: GuardPolicy, accountId?: str
   if (card.usdIn && card.usdIn > policy.maxUsdPerAction) reasons.push(`Worth ~$${card.usdIn.toFixed(2)}, above your $${policy.maxUsdPerAction} limit.`);
 
   const deposit = card.intents?.depositAddress;
+  const payee = card.kind === "pay" ? card.payment?.recipient : undefined; // the recipient the user named
   for (const tx of card.transactions) {
     for (const a of tx.actions) {
+      if (a.type === "Transfer") {
+        // Native NEAR transfers are only allowed as a payment, straight to the named recipient.
+        if (!payee || tx.receiverId !== payee) reasons.push(`Blocked NEAR transfer to ${tx.receiverId}.`);
+        continue;
+      }
       const { methodName, args, deposit: dep } = a.params;
       const ar = args as Record<string, string>;
       if (!ALLOWED_METHODS.has(methodName)) {
@@ -38,10 +44,11 @@ export function checkCard(card: ActionCard, policy: GuardPolicy, accountId?: str
       if (methodName === "near_deposit" && tx.receiverId !== "wrap.near") reasons.push(`near_deposit to unexpected contract ${tx.receiverId}.`);
       if (methodName === "storage_deposit") {
         if (BigInt(dep) > MAX_STORAGE_DEPOSIT) reasons.push(`Storage deposit on ${tx.receiverId} is suspiciously large.`);
-        if (ar.account_id !== accountId && ar.account_id !== deposit) reasons.push(`Storage deposit for unknown account ${ar.account_id}.`);
+        if (ar.account_id !== accountId && ar.account_id !== deposit && ar.account_id !== payee) reasons.push(`Storage deposit for unknown account ${ar.account_id}.`);
       }
       if (methodName === "ft_transfer_call" && !DEX.has(ar.receiver_id)) reasons.push(`Tokens would go to ${ar.receiver_id}, which is not a known DEX.`);
-      if (methodName === "ft_transfer" && (!deposit || ar.receiver_id !== deposit)) reasons.push(`Plain transfer to ${ar.receiver_id} is not the NEAR Intents deposit address.`);
+      if (methodName === "ft_transfer" && ar.receiver_id !== deposit && ar.receiver_id !== payee)
+        reasons.push(`Plain transfer to ${ar.receiver_id} is neither the NEAR Intents deposit address nor the payee you named.`);
     }
   }
   return reasons.length ? { ok: false, reasons } : { ok: true };

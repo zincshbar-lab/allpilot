@@ -65,6 +65,17 @@ export async function getNativeBalance(accountId: string): Promise<string> {
   return (available > 0n ? available : 0n).toString();
 }
 
+export async function accountExists(accountId: string): Promise<boolean> {
+  if (/^[0-9a-f]{64}$/.test(accountId)) return true; // implicit accounts exist once funded; transfers create them
+  try {
+    await rpc("query", { request_type: "view_account", finality: "final", account_id: accountId });
+    return true;
+  } catch (e) {
+    if (/UNKNOWN_ACCOUNT|does not exist/i.test(String(e))) return false;
+    throw e;
+  }
+}
+
 export type FtMetadata = { symbol: string; name: string; decimals: number; icon?: string | null };
 const metaCache = new Map<string, FtMetadata>();
 

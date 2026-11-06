@@ -4,12 +4,15 @@
 import OpenAI from "openai";
 import type { ActionCard, ChatMessage, ChatResponse } from "./cards";
 import { bridge, getBalances, listBridgeChains, memeTrade, swap, trendingMemes } from "./actions";
+import { pay, paymentLink } from "./pay";
 
 const SYSTEM = `You are Pip, the cheerful co-pilot inside Allpilot — a cute AI trading buddy on NEAR.
 You help the user:
 1. swap tokens on NEAR (default venue: NEAR Intents, the engine behind near.com swaps; use venue "rhea" when they mention Ref/Rhea),
 2. bridge assets between NEAR and other chains with NEAR Intents,
-3. buy or sell memecoins launched on JustHoot ("hoot") and nearly.trade ("nearly"), or listed on Rhea/Ref.
+3. buy or sell memecoins launched on JustHoot ("hoot") and nearly.trade ("nearly"), or listed on Rhea/Ref,
+4. pay anyone an exact amount on any chain, paying with whatever token they hold ("Pay with Intents"),
+5. create payment links / a checkout widget so others can pay them from any wallet or chain.
 
 Rules:
 - ALWAYS use tools to get quotes. Never invent prices, amounts, contracts or addresses.
@@ -17,6 +20,8 @@ Rules:
 - If a required detail is missing (amount, token, destination address), ask one short question instead of guessing.
 - Memecoins are risky. If a tool returns warnings about lookalike tokens, repeat the important one.
 - Keep replies short, warm and playful (1–3 sentences, an emoji is fine). Don't repeat the numbers already shown on the card.
+- For payments, the recipient gets EXACTLY the amount; the payer may pay in another token/chain. Always repeat the recipient so the user can double-check it. Never guess a recipient address.
+- A payment link with no recipient goes to the connected wallet; if none is connected, ask who should receive.
 - Not financial advice. If asked what to buy, you can show trending/verified tokens but don't recommend.`;
 
 const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
@@ -94,6 +99,45 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "pay",
+      description: "Pay a recipient an exact amount (they receive exactly `amount` of `token` on `to_chain`). The payer can pay with a different token or chain via NEAR Intents.",
+      parameters: {
+        type: "object",
+        properties: {
+          to: { type: "string", description: "Recipient: NEAR account (alice.near), EVM 0x address, Solana or Bitcoin address" },
+          amount: { type: "string", description: "Exact amount the recipient should receive" },
+          token: { type: "string", description: "Token the recipient receives, e.g. USDC" },
+          to_chain: { type: "string", description: "Chain the recipient receives on. Required for 0x addresses." },
+          pay_with: { type: "string", description: "Token the user pays with, if different (e.g. NEAR, ETH)" },
+          pay_from_chain: { type: "string", description: "Chain the user pays from (default near)" },
+          refund_to: { type: "string", description: "User's address on pay_from_chain when it isn't NEAR" },
+          memo: { type: "string" },
+        },
+        required: ["to", "amount", "token"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "create_payment_link",
+      description: "Create a shareable checkout link + embeddable 'Pay with Intents' widget. Anyone can pay it with any token on any chain; the receiver gets exactly the amount.",
+      parameters: {
+        type: "object",
+        properties: {
+          amount: { type: "string" },
+          token: { type: "string", description: "Token to receive, e.g. USDC" },
+          to: { type: "string", description: "Receiver. Omit to use the connected wallet." },
+          chain: { type: "string", description: "Chain to receive on (default: from the address, NEAR for .near accounts)" },
+          memo: { type: "string", description: "What the payment is for, e.g. 'Order #42'" },
+        },
+        required: ["amount", "token"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "bridge_chains",
       description: "List chains NEAR Intents supports, optionally for one token symbol.",
       parameters: { type: "object", properties: { symbol: { type: "string" } } },
@@ -101,7 +145,7 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   },
 ];
 
-type Ctx = { accountId?: string; cards: ActionCard[] };
+type Ctx = { accountId?: string; cards: ActionCard[]; baseUrl?: string };
 
 function cardSummary(c: ActionCard) {
   return {
@@ -142,19 +186,36 @@ async function runTool(name: string, args: Record<string, unknown>, ctx: Ctx): P
     case "get_balances":
       if (!ctx.accountId) return { error: "Wallet not connected." };
       return getBalances(ctx.accountId, (args.symbols as string[]) ?? undefined);
+    case "pay": {
+      const c = await pay({
+        to: String(args.to), amount: String(args.amount), token: String(args.token),
+        toChain: args.to_chain ? String(args.to_chain) : undefined, payWith: args.pay_with ? String(args.pay_with) : undefined,
+        payFromChain: args.pay_from_chain ? String(args.pay_from_chain) : undefined, refundTo: args.refund_to ? String(args.refund_to) : undefined,
+        memo: args.memo ? String(args.memo) : undefined, accountId: ctx.accountId,
+      });
+      ctx.cards.push(c);
+      return cardSummary(c);
+    }
+    case "create_payment_link": {
+      const to = args.to ? String(args.to) : ctx.accountId;
+      if (!to) return { error: "No receiver: connect a wallet or say who should receive the payments." };
+      const c = await paymentLink({ to, amount: String(args.amount), token: String(args.token), chain: args.chain ? String(args.chain) : undefined, memo: args.memo ? String(args.memo) : undefined, baseUrl: ctx.baseUrl ?? "http://localhost:3000" });
+      ctx.cards.push(c);
+      return { ...cardSummary(c), url: c.checkout?.url };
+    }
     case "bridge_chains":
       return { chains: await listBridgeChains(args.symbol ? String(args.symbol) : undefined) };
   }
   return { error: `Unknown tool ${name}` };
 }
 
-export async function chat(messages: ChatMessage[], accountId?: string): Promise<ChatResponse> {
-  const ctx: Ctx = { accountId, cards: [] };
+export async function chat(messages: ChatMessage[], accountId?: string, baseUrl?: string): Promise<ChatResponse> {
+  const ctx: Ctx = { accountId, cards: [], baseUrl };
   if (!process.env.NEAR_AI_API_KEY) return offline(messages, ctx);
 
   // Instant path: a clear trade command ("buy 0.1 near of hoot", "swap 1 near to usdc") doesn't need the
   // LLM — parse it directly and answer in ~1s. Anything chatty or ambiguous still goes to NEAR AI.
-  const fast = await offline(messages, { accountId, cards: [] }, { tradesOnly: true });
+  const fast = await offline(messages, { accountId, cards: [], baseUrl }, { tradesOnly: true });
   if (fast) return { ...fast, mode: "near-ai" };
 
   const client = new OpenAI({
@@ -177,7 +238,7 @@ export async function chat(messages: ChatMessage[], accountId?: string): Promise
       // NEAR AI unavailable (no credits, outage, bad key): keep the app working with the offline parser.
       if (step > 0 && ctx.cards.length) return { reply: "Here's what I found! ✨", cards: ctx.cards, mode: "near-ai" };
       console.warn("NEAR AI call failed, using offline brain:", e instanceof Error ? e.message : e);
-      return (await offline(messages, { accountId, cards: [] }))!;
+      return (await offline(messages, { accountId, cards: [], baseUrl }))!;
     }
     const msg = res.choices[0].message;
     if (!msg.tool_calls?.length) return { reply: msg.content ?? "", cards: ctx.cards, mode: "near-ai" };
@@ -208,6 +269,24 @@ export async function offline(messages: ChatMessage[], ctx: Ctx, opts?: { trades
   const reply = (r: string): ChatResponse => ({ reply: r, cards: ctx.cards, mode: "offline" });
   try {
     let m: RegExpMatchArray | null;
+    // payment link 5 usdc [to alice.near] [on base] [for order 42]
+    if ((m = text.match(new RegExp(`(?:payment|pay|checkout|invoice)\\s+link\\s+(?:for\\s+)?${NUM}\\s+${TOK}(?:\\s+to\\s+([^\\s]+))?(?:\\s+on\\s+([a-z]+))?(?:\\s+for\\s+(.+))?$`)))) {
+      const [, amount, token, to, chain, memo] = m;
+      const out = await runTool("create_payment_link", { amount, token, to, chain, memo: memo ? (messages.at(-1)?.content ?? "").slice(-memo.length) : undefined }, ctx);
+      if ((out as { error?: string }).error) return reply((out as { error: string }).error);
+      return reply("Your checkout link is ready 🔗 Anyone can pay it with any token on any chain — you get exactly that amount.");
+    }
+    // pay alice.near 10 usdc [with near] [on base]   |   pay/send 10 usdc to alice.near [with eth]
+    if (
+      (m = text.match(new RegExp(`(?:pay|send|tip)\\s+${NUM}\\s+${TOK}\\s+to\\s+([^\\s]+)(?:\\s+on\\s+([a-z]+))?(?:\\s+(?:with|using)\\s+${TOK})?`))) ||
+      (m = text.match(new RegExp(`(?:pay|tip)\\s+([^\\s]+\\.near|0x[0-9a-f]{40}|[0-9a-f]{64})\\s+${NUM}\\s+${TOK}(?:\\s+on\\s+([a-z]+))?(?:\\s+(?:with|using)\\s+${TOK})?`)))
+    ) {
+      const named = /^\d/.test(m[1]) ? { amount: m[1], token: m[2], to: m[3] } : { to: m[1], amount: m[2], token: m[3] };
+      const raw = messages.at(-1)?.content ?? "";
+      const to = raw.match(new RegExp(named.to.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"))?.[0] ?? named.to; // keep address case (EVM checksums)
+      await runTool("pay", { to, amount: named.amount, token: named.token, to_chain: m[4], pay_with: m[5] }, ctx);
+      return reply(`Payment card ready 💌 Double-check the recipient (${to}) before you sign.`);
+    }
     // bridge 10 usdc from near to eth 0xabc…   |   bridge 0.01 eth from eth to near refund 0x…
     if ((m = text.match(new RegExp(`bridge\\s+${NUM}\\s+${TOK}(?:\\s+from\\s+([a-z]+))?\\s+to\\s+([a-z]+)(?:\\s+(?:address\\s+)?([^\\s]+))?(?:.*refund(?:\\s+to)?\\s+([^\\s]+))?`)))) {
       const [, amount, token, from = "near", to, addr, refund] = m;
@@ -245,7 +324,7 @@ export async function offline(messages: ChatMessage[], ctx: Ctx, opts?: { trades
       return reply(b.map((x) => `${x.symbol}: ${x.amount}`).join(" · ") || "No balances found.");
     }
     return reply(
-      `I'm in offline mode (no NEAR AI key set), so I understand simple commands:\n• swap 1 near to usdc\n• swap 5 usdc to near on ref\n• buy 0.2 near of hoot\n• sell 1000 nearly\n• bridge 5 usdc from near to base 0xYourAddress\n• trending memes · balance`,
+      `I'm in offline mode (no NEAR AI key set), so I understand simple commands:\n• swap 1 near to usdc\n• swap 5 usdc to near on ref\n• buy 0.2 near of hoot\n• sell 1000 nearly\n• bridge 5 usdc from near to base 0xYourAddress\n• pay alice.near 5 usdc (add "with near" to pay in NEAR)\n• payment link 10 usdc for order 42\n• trending memes · balance`,
     );
   } catch (e) {
     if (opts?.tradesOnly) return null; // let the LLM explain or recover

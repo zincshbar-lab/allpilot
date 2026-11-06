@@ -1,6 +1,6 @@
 # Allpilot 🦉✈️ — a cute AI co-pilot for NEAR
 
-> Built at **NEAR HACKATHON** (Nov 2026). Tracks: **Unstoppable DeFi** (`defi`), **Agent Economy** (`agents`), **AI Security & Defense** (`security`), **Privacy & Private AI** (`privacy`).
+> Built at **NEAR HACKATHON** (Nov 2026). Tracks: **Unstoppable DeFi** (`defi`), **Real-World Money** (`realworld`), **Agent Economy** (`agents`), **AI Security & Defense** (`security`), **Privacy & Private AI** (`privacy`).
 
 ## The problem
 
@@ -20,6 +20,10 @@ You chat with **Pip** in plain words. Pip fetches live quotes and turns your req
 | `buy 0.1 near of nearly` | Same for nearly.trade tokens (direct or 2-hop pools) | nearly.trade → Rhea DCL |
 | `sell 100 hoot` | Sells back to native NEAR | Rhea DCL |
 | `trending memes` | Verified memes + freshest nearly.trade launches (read on-chain from `nearlytrade.near`) | — |
+| `pay alice.near 5 usdc` | Same token on NEAR: one direct `ft_transfer` to the recipient, no fee | Direct |
+| `pay alice.near 5 usdc with near` | Recipient gets **exactly** 5 USDC; you pay in NEAR (exact-output quote) | NEAR Intents |
+| `send 5 usdc to 0xAbc… on base` | Pay someone on another chain from your NEAR wallet | NEAR Intents |
+| `payment link 10 usdc for Order 42` | Shareable checkout link + embeddable widget + "Pay with Intents" button | NEAR Intents |
 
 ### How NEAR fits in
 
@@ -29,6 +33,18 @@ You chat with **Pip** in plain words. Pip fetches live quotes and turns your req
 - **NEAR AI Cloud** (OpenAI-compatible, private inference) is the chat brain, with tool calling.
 - **HOT's NEAR Connect** handles wallet connection: HOT, Meteor, Intear, Ledger, MyNearWallet, OKX, NEAR Mobile, Trezu, Nightly, Hana, Ethereum wallets (MetaMask etc. via EVM-on-NEAR) and NEAR CLI. The wallet list ships with the app (`src/lib/wallet-manifest.json`) as a fallback, so the picker is never empty if GitHub is slow or blocked.
 
+### 💌 Pay with Intents (universal checkout)
+
+A merchant (or friend) asks for an **exact amount of one token on one chain**: "10 USDC to shop.near". The payer pays with **whatever they hold, on whatever chain**.
+
+1. **Make a link.** Tell Pip `payment link 10 usdc for Order 42`. You get a `/pay?to=…&amount=…&token=…&chain=…&memo=…` URL, an `<iframe>` widget and a "Pay with Intents" button snippet to paste on any website.
+2. **Payer opens it** and picks a chain + token (NEAR, USDC, ETH on Base, SOL, BTC… anything NEAR Intents supports).
+3. **Allpilot asks NEAR Intents 1Click for an `EXACT_OUTPUT` quote.** The output is fixed, so the payee gets exactly 10 USDC. The slippage buffer sits on the payer's side and anything unused is refunded.
+4. **Paying from NEAR:** the payer's wallet signs one tx (wrap if needed, then transfer to the 1Click deposit address). **Paying from another chain:** the page shows a deposit address and exact amount to send from their own wallet (MetaMask, Phantom, a BTC wallet…), then tracks status live.
+5. **Solvers settle it** through NEAR Intents and deliver the token to the payee. No custodian, no bridge UI, no account on our side.
+
+Same token on NEAR (`pay alice.near 5 usdc`) skips Intents entirely: it's a direct transfer with no fee. Recipients are checked before quoting: NEAR accounts must exist, EVM addresses must be well-formed, and Pip always repeats the recipient.
+
 ### 🛡️ Pilot Guard (agent safety)
 
 The AI only proposes. Before any wallet prompt, the browser checks every proposed transaction against rules the user controls, which the model can't change:
@@ -36,7 +52,7 @@ The AI only proposes. Before any wallet prompt, the browser checks every propose
 - spend limits per action (NEAR attached and USD value, editable in the UI)
 - method allowlist: `near_deposit`, `storage_deposit`, `ft_transfer_call`, `ft_transfer`
 - `ft_transfer_call` may only target known DEX contracts (`v2.ref-finance.near`, `dclv2.ref-labs.near`)
-- plain `ft_transfer` may only go to the 1Click deposit address from that quote
+- plain `ft_transfer` (and native NEAR transfers) may only go to the 1Click deposit address from that quote, or to the payee the user named in a payment
 - storage deposits capped at 0.01 NEAR and only for you or the deposit address
 - expired quotes can't be signed
 
@@ -59,6 +75,8 @@ Open http://localhost:3000, then:
 3. Type `bridge 5 usdc from near to base 0x2527D02599Ba641c19FEa793cD0F167589a0f10D`. You should see a bridge card with the recipient filled in.
 4. Click **Connect wallet**, then repeat any request. The card now has **Sign with wallet (n tx)** and a green **Pilot Guard** line.
 5. Open **🛡️ Guard**, set *Max NEAR per action* to `0.05`, and ask for `buy 0.1 near of hoot`. The Guard turns red and blocks signing.
+6. Type `payment link 10 usdc to intents.near for Order 42`. You should see a link card with **Copy** buttons for the URL, an iframe widget and a button.
+7. Click **Open checkout ↗** on that card. Pick **Chain: Base** and **Token: ETH**, paste any Base address as the refund address, and click **Get quote in ETH**. You should see the exact ETH to send and a deposit address, while the receiver still gets exactly 10 USDC on NEAR.
 
 **Without `NEAR_AI_API_KEY`** the app runs in *offline brain* mode: a small command parser that handles all the commands above, so everything stays reproducible. **With a key** (get one at https://cloud.near.ai), Pip understands free-form chat and calls the same tools.
 
@@ -75,8 +93,12 @@ src/
   app/api/chat           POST: chat → agent → action cards
   app/api/intents-status POST: 1Click status (+ optional deposit tx submit)
   app/api/trending       POST: verified memes + fresh nearly.trade launches
+  app/api/pay/assets     POST: every token/chain a payer can use (from 1Click)
+  app/api/pay/quote      POST: exact-output payment quote → ActionCard
+  app/pay                checkout page (?embed=1 for the iframe widget)
   lib/agent.ts           NEAR AI Cloud tool-calling loop + offline parser
   lib/actions.ts         swap / bridge / memeTrade / trending → ActionCard
+  lib/pay.ts             pay / paymentLink / payableAssets (Pay with Intents)
   lib/intents.ts         NEAR Intents 1Click client
   lib/rhea.ts            Rhea smart router + v2.ref-finance.near tx builder
   lib/dcl.ts             Rhea DCL pool index, quotes, swap tx builder
@@ -94,6 +116,7 @@ src/
 | `NEAR_AI_BASE_URL` | `https://cloud-api.near.ai/v1` | |
 | `ONECLICK_JWT` | — | 1Click partner JWT (removes the 0.2% fee, rule Q-006) |
 | `NEAR_RPC_URLS` | fastnear, shitzuapes, drpc | Comma-separated mainnet RPCs |
+| `PUBLIC_SITE_URL` | request origin | Base URL used in payment links (set it when deployed) |
 
 ## Hackathon compliance notes
 

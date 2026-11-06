@@ -7,7 +7,11 @@ export type FunctionCall = {
   type: "FunctionCall";
   params: { methodName: string; args: object; gas: string; deposit: string };
 };
-export type PlannedTx = { receiverId: string; actions: FunctionCall[] };
+export type TransferAction = { type: "Transfer"; params: { deposit: string } };
+export type TxAction = FunctionCall | TransferAction;
+export type PlannedTx = { receiverId: string; actions: TxAction[] };
+
+export const transfer = (deposit: string): TransferAction => ({ type: "Transfer", params: { deposit } });
 
 export const fc = (methodName: string, args: object, tgas: number, deposit = "0"): FunctionCall => ({
   type: "FunctionCall",

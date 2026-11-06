@@ -245,8 +245,8 @@ const CHAIN_NAMES: Record<string, string> = {
   bsc: "BNB Chain", avax: "Avalanche", op: "Optimism", tron: "Tron", ton: "TON", doge: "Dogecoin", xrp: "XRP Ledger",
   zec: "Zcash", sui: "Sui", aptos: "Aptos", gnosis: "Gnosis", bera: "Berachain", stellar: "Stellar", cardano: "Cardano", ltc: "Litecoin",
 };
-const chainName = (c: string) => CHAIN_NAMES[c] ?? c.toUpperCase();
-function placeholderFor(chain: string) {
+export const chainName = (c: string) => CHAIN_NAMES[c] ?? c.toUpperCase();
+export function placeholderFor(chain: string) {
   // Only used for dry (quote-only) requests; never receives funds.
   // (Example addresses from the 1Click OpenAPI docs.)
   if (["eth", "base", "arb", "pol", "bsc", "avax", "op", "gnosis", "bera"].includes(chain)) return "0x2527D02599Ba641c19FEa793cD0F167589a0f10D";

@@ -6,7 +6,7 @@ const show = (name: string, c: Awaited<ReturnType<typeof swap>>) => {
   console.log(`\n=== ${name}: ${c.title} [${c.venue}]`);
   for (const l of c.lines) console.log(`  ${l.label}: ${l.value}`);
   for (const w of c.warnings) console.log(`  ⚠ ${w}`);
-  console.log(`  txs: ${c.transactions.map((t) => `${t.receiverId}(${t.actions.map((a) => a.params.methodName).join("+")})`).join(" → ") || "none"}`);
+  console.log(`  txs: ${c.transactions.map((t) => `${t.receiverId}(${t.actions.map((a) => ("methodName" in a.params ? a.params.methodName : a.type)).join("+")})`).join(" → ") || "none"}`);
   console.log(`  nearSpend: ${c.nearSpend}`);
 };
 const run = async (name: string, f: () => Promise<Awaited<ReturnType<typeof swap>>>) => {
