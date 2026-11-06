@@ -2,6 +2,8 @@
 
 > Built at **NEAR HACKATHON** (Nov 2026). Tracks: **Unstoppable DeFi** (`defi`), **Real-World Money** (`realworld`), **Agent Economy** (`agents`), **AI Security & Defense** (`security`), **Privacy & Private AI** (`privacy`).
 
+**🌐 Live demo: https://allpilot.vercel.app** (mainnet, NEAR AI brain on) · Checkout example: [pay 1 USDC](https://allpilot.vercel.app/pay?to=intents.near&amount=1&token=USDC&chain=near&memo=Demo)
+
 ## The problem
 
 Doing things on NEAR means juggling different apps: near.com / NEAR Intents for swaps and bridges, Rhea (Ref) for AMM trades, and launchpads like JustHoot and nearly.trade for memecoins. Each one has its own UI, token lists full of copycat contracts, and different transaction formats.

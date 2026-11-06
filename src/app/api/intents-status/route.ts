@@ -9,3 +9,6 @@ export async function POST(req: Request) {
   if (txHash) await intentsSubmitDeposit(txHash, depositAddress, sender).catch(() => null);
   return Response.json(await intentsStatus(depositAddress, depositMemo));
 }
+
+// First request on a cold server builds the pool/price indexes; give it room on Vercel.
+export const maxDuration = 60;
