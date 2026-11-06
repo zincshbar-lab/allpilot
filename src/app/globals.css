@@ -1,0 +1,192 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #fff7f0;
+  --bg-dots: #ffe3ea;
+  --surface: #ffffff;
+  --surface-2: #fff1f5;
+  --ink: #3b2f4a;
+  --ink-soft: #7a6c8a;
+  --line: #f3dfe7;
+  --pink: #ff8fb1;
+  --pink-soft: #ffd6e3;
+  --lav: #b9a4ff;
+  --lav-soft: #ece6ff;
+  --mint: #7fdcb5;
+  --mint-soft: #d9f7ea;
+  --butter: #ffd772;
+  --butter-soft: #fff3cc;
+  --sky: #8fd3ff;
+  --sky-soft: #def2ff;
+  --danger: #e2557a;
+  --danger-soft: #ffe1e9;
+
+  --pip-body: #c9b6ff;
+  --pip-body-dark: #a68cf5;
+  --pip-belly: #fff3fb;
+  --pip-strap: #ff8fb1;
+  --pip-goggle-rim: #ffd772;
+  --pip-eye-bg: #ffffff;
+  --pip-beak: #ffb24d;
+  --pip-cheek: #ff9fbf;
+
+  --shadow: 0 6px 0 #f1d6e0, 0 14px 30px rgba(186, 120, 160, 0.14);
+  --shadow-sm: 0 3px 0 #f1d6e0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1f1a2e;
+    --bg-dots: #2b2440;
+    --surface: #2a2340;
+    --surface-2: #332a4d;
+    --ink: #f6eefe;
+    --ink-soft: #b8acd0;
+    --line: #3d3358;
+    --pink-soft: #4a2c45;
+    --lav-soft: #362d5c;
+    --mint-soft: #22443d;
+    --butter-soft: #4a3f25;
+    --sky-soft: #233b52;
+    --danger-soft: #4b2433;
+    --pip-belly: #f1e6ff;
+    --pip-eye-bg: #fffaf2;
+    --shadow: 0 6px 0 #171225, 0 14px 30px rgba(0, 0, 0, 0.35);
+    --shadow-sm: 0 3px 0 #171225;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1f1a2e;
+  --bg-dots: #2b2440;
+  --surface: #2a2340;
+  --surface-2: #332a4d;
+  --ink: #f6eefe;
+  --ink-soft: #b8acd0;
+  --line: #3d3358;
+  --pink-soft: #4a2c45;
+  --lav-soft: #362d5c;
+  --mint-soft: #22443d;
+  --butter-soft: #4a3f25;
+  --sky-soft: #233b52;
+  --danger-soft: #4b2433;
+  --pip-belly: #f1e6ff;
+  --pip-eye-bg: #fffaf2;
+  --shadow: 0 6px 0 #171225, 0 14px 30px rgba(0, 0, 0, 0.35);
+  --shadow-sm: 0 3px 0 #171225;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-line: var(--line);
+  --color-pink: var(--pink);
+  --color-pink-soft: var(--pink-soft);
+  --color-lav: var(--lav);
+  --color-lav-soft: var(--lav-soft);
+  --color-mint: var(--mint);
+  --color-mint-soft: var(--mint-soft);
+  --color-butter: var(--butter);
+  --color-butter-soft: var(--butter-soft);
+  --color-sky: var(--sky);
+  --color-sky-soft: var(--sky-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --font-sans: var(--font-fredoka), ui-rounded, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+body {
+  font-family: var(--font-sans);
+  background-image: radial-gradient(var(--bg-dots) 1.6px, transparent 1.6px);
+  background-size: 22px 22px;
+  min-height: 100dvh;
+}
+
+.card {
+  background: var(--surface);
+  border: 2px solid var(--line);
+  border-radius: 24px;
+  box-shadow: var(--shadow);
+}
+
+.btn {
+  border-radius: 999px;
+  font-weight: 600;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  box-shadow: var(--shadow-sm);
+}
+.btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+.btn:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: none;
+}
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+@keyframes bob {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-2deg);
+  }
+  50% {
+    transform: translateY(-6px) rotate(2deg);
+  }
+}
+.bob {
+  animation: bob 3.2s ease-in-out infinite;
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.pop {
+  animation: pop 0.28s ease-out both;
+}
+
+@keyframes dots {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+.typing span {
+  animation: dots 1.2s infinite;
+}
+.typing span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.typing span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bob,
+  .pop,
+  .typing span {
+    animation: none;
+  }
+}
