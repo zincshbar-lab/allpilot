@@ -18,6 +18,7 @@ async function rpc<T>(method: string, params: unknown): Promise<T> {
   for (const url of [...RPC_URLS, ...RPC_URLS]) {
     try {
       const res = await fetch(url, {
+        signal: AbortSignal.timeout(8_000), // a stuck RPC must not hang the chat; try the next one
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ jsonrpc: "2.0", id: "allpilot", method, params }),

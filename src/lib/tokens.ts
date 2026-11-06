@@ -26,7 +26,7 @@ let priceCache: { at: number; map: Record<string, PriceEntry> } | null = null;
 
 export async function rheaPrices(): Promise<Record<string, PriceEntry>> {
   if (priceCache && Date.now() - priceCache.at < 5 * 60_000) return priceCache.map;
-  const res = await fetch("https://api.ref.finance/list-token-price", { cache: "no-store" });
+  const res = await fetch("https://api.ref.finance/list-token-price", { cache: "no-store", signal: AbortSignal.timeout(10_000) });
   const map = (await res.json()) as Record<string, PriceEntry>;
   priceCache = { at: Date.now(), map };
   return map;

@@ -152,7 +152,17 @@ export async function chat(messages: ChatMessage[], accountId?: string): Promise
   const ctx: Ctx = { accountId, cards: [] };
   if (!process.env.NEAR_AI_API_KEY) return offline(messages, ctx);
 
-  const client = new OpenAI({ apiKey: process.env.NEAR_AI_API_KEY, baseURL: process.env.NEAR_AI_BASE_URL ?? "https://cloud-api.near.ai/v1" });
+  // Instant path: a clear trade command ("buy 0.1 near of hoot", "swap 1 near to usdc") doesn't need the
+  // LLM — parse it directly and answer in ~1s. Anything chatty or ambiguous still goes to NEAR AI.
+  const fast = await offline(messages, { accountId, cards: [] }, { tradesOnly: true });
+  if (fast) return { ...fast, mode: "near-ai" };
+
+  const client = new OpenAI({
+    apiKey: process.env.NEAR_AI_API_KEY,
+    baseURL: process.env.NEAR_AI_BASE_URL ?? "https://cloud-api.near.ai/v1",
+    timeout: 30_000,
+    maxRetries: 1,
+  });
   const model = process.env.NEAR_AI_MODEL ?? "deepseek/deepseek-v4.1-flash";
   const convo: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: "system", content: `${SYSTEM}\nConnected wallet: ${accountId ?? "none (ask them to connect before signing)"}.` },
@@ -167,7 +177,7 @@ export async function chat(messages: ChatMessage[], accountId?: string): Promise
       // NEAR AI unavailable (no credits, outage, bad key): keep the app working with the offline parser.
       if (step > 0 && ctx.cards.length) return { reply: "Here's what I found! ✨", cards: ctx.cards, mode: "near-ai" };
       console.warn("NEAR AI call failed, using offline brain:", e instanceof Error ? e.message : e);
-      return offline(messages, { accountId, cards: [] });
+      return (await offline(messages, { accountId, cards: [] }))!;
     }
     const msg = res.choices[0].message;
     if (!msg.tool_calls?.length) return { reply: msg.content ?? "", cards: ctx.cards, mode: "near-ai" };
@@ -191,7 +201,9 @@ export async function chat(messages: ChatMessage[], accountId?: string): Promise
 const NUM = "(\\d+(?:\\.\\d+)?)";
 const TOK = "\\$?([a-z0-9._-]+)";
 
-export async function offline(messages: ChatMessage[], ctx: Ctx): Promise<ChatResponse> {
+export async function offline(messages: ChatMessage[], ctx: Ctx): Promise<ChatResponse>;
+export async function offline(messages: ChatMessage[], ctx: Ctx, opts: { tradesOnly: true }): Promise<ChatResponse | null>;
+export async function offline(messages: ChatMessage[], ctx: Ctx, opts?: { tradesOnly: true }): Promise<ChatResponse | null> {
   const text = (messages.at(-1)?.content ?? "").toLowerCase().trim();
   const reply = (r: string): ChatResponse => ({ reply: r, cards: ctx.cards, mode: "offline" });
   try {
@@ -220,6 +232,7 @@ export async function offline(messages: ChatMessage[], ctx: Ctx): Promise<ChatRe
       await runTool("swap_tokens", { amount: m[1], from: m[2], to: m[3], venue }, ctx);
       return reply(`Swap quote via ${venue === "rhea" ? "Rhea (Ref)" : "NEAR Intents"} ready 🎀`);
     }
+    if (opts?.tradesOnly) return null; // not a clear trade command: let the LLM handle it
     if (/trend|hot memes|what.*meme|new launch/.test(text)) {
       const t = await trendingMemes();
       return reply(
@@ -235,6 +248,7 @@ export async function offline(messages: ChatMessage[], ctx: Ctx): Promise<ChatRe
       `I'm in offline mode (no NEAR AI key set), so I understand simple commands:\n• swap 1 near to usdc\n• swap 5 usdc to near on ref\n• buy 0.2 near of hoot\n• sell 1000 nearly\n• bridge 5 usdc from near to base 0xYourAddress\n• trending memes · balance`,
     );
   } catch (e) {
+    if (opts?.tradesOnly) return null; // let the LLM explain or recover
     return reply(`Oops 🙈 ${e instanceof Error ? e.message : String(e)}`);
   }
 }

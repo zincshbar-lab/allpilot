@@ -43,7 +43,7 @@ export async function planRheaSwap(opts: {
   u.searchParams.set("tokenOut", tout);
   u.searchParams.set("pathDeep", "3");
   u.searchParams.set("slippage", String(opts.slippageBps / 10_000));
-  const res = await fetch(u, { cache: "no-store" });
+  const res = await fetch(u, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
   const json = (await res.json()) as RouterResp;
   if (json.result_code !== 0 || !json.result_data?.routes?.length) return null;
 

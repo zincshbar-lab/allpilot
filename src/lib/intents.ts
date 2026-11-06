@@ -23,7 +23,7 @@ let tokenCache: { at: number; list: IntentsToken[] } | null = null;
 
 export async function intentsTokens(): Promise<IntentsToken[]> {
   if (tokenCache && Date.now() - tokenCache.at < 5 * 60_000) return tokenCache.list;
-  const res = await fetch(`${BASE}/v0/tokens`, { headers: headers(), cache: "no-store" });
+  const res = await fetch(`${BASE}/v0/tokens`, { headers: headers(), cache: "no-store", signal: AbortSignal.timeout(15_000) });
   if (!res.ok) throw new Error(`1Click tokens: ${res.status}`);
   const list = (await res.json()) as IntentsToken[];
   tokenCache = { at: Date.now(), list };
@@ -106,6 +106,7 @@ export async function intentsQuote(q: QuoteInput): Promise<IntentsQuote> {
     headers: headers(),
     body: JSON.stringify(body),
     cache: "no-store",
+    signal: AbortSignal.timeout(20_000),
   });
   const json = await res.json();
   if (!res.ok) throw new Error(`1Click quote failed: ${json?.message ?? res.status}`);
@@ -116,7 +117,7 @@ export async function intentsStatus(depositAddress: string, depositMemo?: string
   const u = new URL(`${BASE}/v0/status`);
   u.searchParams.set("depositAddress", depositAddress);
   if (depositMemo) u.searchParams.set("depositMemo", depositMemo);
-  const res = await fetch(u, { headers: headers(), cache: "no-store" });
+  const res = await fetch(u, { headers: headers(), cache: "no-store", signal: AbortSignal.timeout(15_000) });
   return res.json();
 }
 
@@ -127,6 +128,7 @@ export async function intentsSubmitDeposit(txHash: string, depositAddress: strin
     headers: headers(),
     body: JSON.stringify({ txHash, depositAddress, ...(nearSenderAccount ? { nearSenderAccount } : {}) }),
     cache: "no-store",
+    signal: AbortSignal.timeout(20_000),
   });
   return res.json().catch(() => ({}));
 }
