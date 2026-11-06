@@ -6,13 +6,12 @@ import { getPolicy, getServerPolicy, savePolicy, subscribePolicy, type GuardPoli
 import { ActionCardView } from "./ActionCardView";
 import { Pip } from "./Pip";
 import { RichText } from "./RichText";
+import { QuickActions, type Suggestion } from "./QuickActions";
 import { useWallet } from "./useWallet";
 import { fileToIcon } from "@/lib/image";
 
 type Msg = { role: "user" | "assistant"; content: string; cards?: ActionCard[] };
 
-// `text` sends straight away; `fill` drops an editable template into the box (for things that need a recipient).
-type Suggestion = { label: string; text?: string; fill?: string; select?: string };
 const SUGGESTIONS: Suggestion[] = [
   { label: "🔄 Swap 1 NEAR → USDC", text: "swap 1 near to usdc" },
   { label: "💌 Pay a friend", fill: "pay friend.near 1 usdc", select: "friend.near" },
@@ -177,6 +176,7 @@ export default function App() {
                   <Pip size={34} className="shrink-0 mt-1" mood={m.cards?.length ? "wow" : "happy"} />
                   <div className="min-w-0 flex-1 max-w-[560px]">
                     <p className="inline-block rounded-3xl rounded-tl-md bg-surface-2 border-2 border-line px-4 py-2.5 whitespace-pre-wrap break-words"><RichText text={m.content} /></p>
+                    {i === 0 && <QuickActions onPick={applySuggestion} disabled={busy} />}
                     {m.cards?.map((c) => (
                       <ActionCardView key={c.id} card={c} accountId={wallet.accountId} policy={policy} onConnect={wallet.connect} signAndSend={wallet.signAndSend} />
                     ))}
@@ -196,7 +196,7 @@ export default function App() {
           </div>
 
           <div className="border-t-2 border-line p-3 sm:p-4">
-            <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
+            <div className={`flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 ${msgs.length > 1 ? "" : "hidden"}`}>
               {SUGGESTIONS.map((s) => (
                 <button key={s.label} className="btn shrink-0 bg-surface-2 border-2 border-line px-3 py-1.5 text-xs" onClick={() => applySuggestion(s)} disabled={busy}>
                   {s.label}

@@ -95,8 +95,9 @@ npm run dev
 
 Open http://localhost:3000, then:
 
-1. Click **🦉 Buy HOOT**. You should see a card with the verified contract `hoot-8ecf65.launchpad.justhoot.near`, a live Rhea DCL quote, and a warning about lookalike tokens.
-2. Click **🔄 Swap 1 NEAR → USDC**. You should see a NEAR Intents quote (est. output, minimum, ~time).
+0. Under Pip's welcome message you'll see quick-action pills (**Launch a token**, **Portfolio**, **Trending memes**, **Swap**, **Pay a friend**, **More**). Click **More** to reveal the rest.
+1. Click **More → Buy HOOT**. You should see a card with the verified contract `hoot-8ecf65.launchpad.justhoot.near`, a live Rhea DCL quote, and a warning about lookalike tokens.
+2. Click the **Swap** pill (sends `swap 1 near to usdc`). You should see a NEAR Intents quote (est. output, minimum, ~time).
 3. Type `bridge 5 usdc from near to base 0x2527D02599Ba641c19FEa793cD0F167589a0f10D`. You should see a bridge card with the recipient filled in.
 4. Click **Connect wallet**, then repeat any request. The card now has **Sign with wallet (n tx)** and a green **Pilot Guard** line.
 5. Open **🛡️ Guard**, set *Max NEAR per action* to `0.05`, and ask for `buy 0.1 near of hoot`. The Guard turns red and blocks signing.
