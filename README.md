@@ -6,7 +6,7 @@
 
 ## The problem
 
-Doing things on NEAR means juggling different apps: near.com / NEAR Intents for swaps and bridges, Rhea (Ref) for AMM trades, and launchpads like JustHoot and nearly.trade for memecoins. Each one has its own UI, token lists full of copycat contracts, and different transaction formats.
+Doing things on NEAR means juggling different apps: near.com / NEAR Intents for swaps and bridges, Rhea (Ref) for AMM trades, and launchpads like JustHoot and nearly.trade for memecoins. Each one has its own UI, token lists full of copycat contracts, and different transaction formats. Paying someone across chains, or getting paid by a customer who holds a different token, is even harder.
 
 ## What Allpilot does
 
@@ -34,8 +34,9 @@ You chat with **Pip** in plain words. Pip fetches live quotes and turns your req
 
 - **NEAR Intents (1Click API)** does swaps and cross-chain bridging (BTC, ETH, SOL, Base, Arbitrum and 20+ chains) with no custodian. It's the same engine near.com uses.
 - **Rhea DCL** (`dclv2.ref-labs.near`): JustHoot (`*.justhoot.near`) and nearly.trade (`*.nearlytrade.near`) launch every memecoin as one-sided liquidity in a DCL pool. Allpilot reads `list_pools` / `quote` directly from the contract, so any new launch is buyable right away.
-- **Rhea classic AMM** (`v2.ref-finance.near`) via the public smart router.
-- **NEAR AI Cloud** (OpenAI-compatible, private inference) is the chat brain, with tool calling.
+- **Rhea classic AMM** (`v2.ref-finance.near`) via the public smart router for swaps, and `register_tokens` → deposit → `add_liquidity` for providing liquidity.
+- **Launchpad factories**: `v2-launchpad.justhoot.near` (`launch_meme`) and `nearlytrade.near` (`launch`), each minting a NEP-141 token and opening its Rhea DCL pool in one transaction, priced live with `get_launch_deposit` / `quote_launch`.
+- **NEAR AI Cloud** (OpenAI-compatible, private inference) is the chat brain, with tool calling. Clear commands (`buy …`, `swap …`, `pay …`, `launch … on …`, `add lp …`) take an instant path that skips the LLM (~1 s). Every network call has a timeout, and if NEAR AI is unavailable Pip falls back to the command parser.
 - **HOT's NEAR Connect** handles wallet connection: HOT, Meteor, Intear, Ledger, MyNearWallet, OKX, NEAR Mobile, Trezu, Nightly, Hana, Ethereum wallets (MetaMask etc. via EVM-on-NEAR) and NEAR CLI. The wallet list ships with the app (`src/lib/wallet-manifest.json`) as a fallback, so the picker is never empty if GitHub is slow or blocked.
 
 ### 💌 Pay with Intents (universal checkout)
