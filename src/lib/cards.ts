@@ -7,10 +7,12 @@ export type Venue = "near-intents" | "rhea" | "rhea-dcl" | "direct";
 
 export type ActionCard = {
   id: string;
-  kind: "swap" | "bridge" | "meme" | "pay" | "link" | "info";
+  kind: "swap" | "bridge" | "meme" | "pay" | "link" | "launch" | "lp" | "info";
   title: string;
   venue?: Venue;
   launchpad?: "justhoot" | "nearly" | null;
+  /** Token picture (data URL) for launch cards. */
+  icon?: string;
   lines: { label: string; value: string }[];
   warnings: string[];
   /** NEAR-side transactions for the connected wallet to sign. Empty when it is a quote only. */

@@ -1,6 +1,6 @@
 # Allpilot 🦉✈️ — a cute AI co-pilot for NEAR
 
-> Built at **NEAR HACKATHON** (Nov 2026). Tracks: **Unstoppable DeFi** (`defi`), **Real-World Money** (`realworld`), **Agent Economy** (`agents`), **AI Security & Defense** (`security`), **Privacy & Private AI** (`privacy`).
+> Built at **NEAR HACKATHON** (Nov 2026). Tracks: **Unstoppable DeFi** (`defi`), **Real-World Money** (`realworld`), **Memecoins With Mechanics** (`memecoins`), **Agent Economy** (`agents`), **AI Security & Defense** (`security`), **Privacy & Private AI** (`privacy`).
 
 **🌐 Live demo: https://allpilot.vercel.app** (mainnet, NEAR AI brain on) · Checkout example: [pay 1 USDC](https://allpilot.vercel.app/pay?to=intents.near&amount=1&token=USDC&chain=near&memo=Demo)
 
@@ -26,6 +26,9 @@ You chat with **Pip** in plain words. Pip fetches live quotes and turns your req
 | `pay alice.near 5 usdc with near` | Recipient gets **exactly** 5 USDC; you pay in NEAR (exact-output quote) | NEAR Intents |
 | `send 5 usdc to 0xAbc… on base` | Pay someone on another chain from your NEAR wallet | NEAR Intents |
 | `payment link 10 usdc for Order 42` | Shareable checkout link + embeddable widget + "Pay with Intents" button | NEAR Intents |
+| 📎 + `launch Pip Coin $PIP on hoot` | Launches a new memecoin with your uploaded picture: token + Rhea DCL pool in one tx | JustHoot `launch_meme` |
+| 📎 + `launch Owl $OWL on nearly with first buy 0.2 near` | Same on nearly.trade, with description/links on-chain and an optional first buy | nearly.trade `launch` |
+| `add lp 1 near and usdc` | Picks the deepest classic pool, matches the pool ratio, then register → deposit → `add_liquidity` | Rhea / Ref |
 
 ### How NEAR fits in
 
@@ -47,6 +50,24 @@ A merchant (or friend) asks for an **exact amount of one token on one chain**: "
 
 Same token on NEAR (`pay alice.near 5 usdc`) skips Intents entirely: it's a direct transfer with no fee. Recipients are checked before quoting: NEAR accounts must exist, EVM addresses must be well-formed, and Pip always repeats the recipient.
 
+### 🚀 Launch a memecoin (with a picture)
+
+Tap **📎** to pick any image. It's center-cropped and shrunk **in your browser** to a ~2–7 KB WebP data URL, small enough for both launchpads' on-chain limits (JustHoot ~7 KB, nearly.trade 16 KB). Then say e.g. `launch Pip Coin $PIP on hoot`. If you don't say where, Pip asks and compares the two launchpads:
+
+| | JustHoot | nearly.trade |
+| --- | --- | --- |
+| Contract / method | `v2-launchpad.justhoot.near` · `launch_meme({args})` | `nearlytrade.near` · `launch({args})` |
+| Cost (live quote) | `get_launch_deposit` (~0.06–0.1 NEAR) | `quote_launch` (~0.09–0.2 NEAR) |
+| Ticker | 2–10 letters/digits | 1–12 letters/digits |
+| Description & links | off-chain, added on justhoot.fun | stored on-chain |
+| Opens at | $5,000 FDV, NEAR pair | NEAR pair |
+
+Both mint a fixed 1B supply and open a Rhea DCL pool in the same transaction. An optional **first buy** is attached in NEAR, and unused deposit is refunded by the factory. The launch formats come from nearly.trade's verified contract source and fastnear's open-source near.fm adapters.
+
+### 💧 Add liquidity on Rhea (Ref)
+
+`add lp 1 near and usdc` finds the deepest **classic** pool for the pair (Rhea's top-pools API, falling back to scanning `get_pools`). It reads live reserves, matches the second amount to the pool ratio, checks your balances, and builds: `storage_deposit` (first time) + `register_tokens` → `ft_transfer_call` of each token to `v2.ref-finance.near` (wrapping NEAR first) → `add_liquidity`. Anything the pool doesn't take stays in your Rhea balance. Pip warns about impermanent loss.
+
 ### 🛡️ Pilot Guard (agent safety)
 
 The AI only proposes. Before any wallet prompt, the browser checks every proposed transaction against rules the user controls, which the model can't change:
@@ -56,6 +77,7 @@ The AI only proposes. Before any wallet prompt, the browser checks every propose
 - `ft_transfer_call` may only target known DEX contracts (`v2.ref-finance.near`, `dclv2.ref-labs.near`)
 - plain `ft_transfer` (and native NEAR transfers) may only go to the 1Click deposit address from that quote, or to the payee the user named in a payment
 - storage deposits capped at 0.01 NEAR and only for you or the deposit address
+- `launch_meme` / `launch` are only allowed on launch cards and only on the two launchpad factories; `register_tokens` / `add_liquidity` only on liquidity cards and only on `v2.ref-finance.near`
 - expired quotes can't be signed
 
 It also catches **copycat tokens**. NEAR symbols aren't unique (we found 15+ fake "HOOT" contracts). Allpilot pins verified contracts, ranks the rest by real wNEAR volume through their pool, and warns on every card where lookalikes exist.
@@ -79,6 +101,8 @@ Open http://localhost:3000, then:
 5. Open **🛡️ Guard**, set *Max NEAR per action* to `0.05`, and ask for `buy 0.1 near of hoot`. The Guard turns red and blocks signing.
 6. Type `payment link 10 usdc to intents.near for Order 42`. You should see a link card with **Copy** buttons for the URL, an iframe widget and a button.
 7. Click **Open checkout ↗** on that card. Pick **Chain: Base** and **Token: ETH**, paste any Base address as the refund address, and click **Get quote in ETH**. You should see the exact ETH to send and a deposit address, while the receiver still gets exactly 10 USDC on NEAR.
+8. Tap **📎**, pick any picture, then type `launch Pip Coin $PIP on nearly`. You should see a 🚀 launch card with your picture, cost (~0.09 NEAR) and a permanent-launch warning. Try `launch Pip Coin $P on hoot` and see the ticker rule rejected.
+9. Type `add lp 1 near and usdc`. You should see a 💧 card with the Rhea pool, its TVL, the USDC amount matched to the pool ratio, and 4 steps.
 
 **Without `NEAR_AI_API_KEY`** the app runs in *offline brain* mode: a small command parser that handles all the commands above, so everything stays reproducible. **With a key** (get one at https://cloud.near.ai), Pip understands free-form chat and calls the same tools.
 
@@ -101,6 +125,9 @@ src/
   lib/agent.ts           NEAR AI Cloud tool-calling loop + offline parser
   lib/actions.ts         swap / bridge / memeTrade / trending → ActionCard
   lib/pay.ts             pay / paymentLink / payableAssets (Pay with Intents)
+  lib/launch.ts          launchToken on JustHoot / nearly.trade (live cost quotes)
+  lib/liquidity.ts       addLiquidity on Rhea classic pools
+  lib/image.ts           in-browser image → small on-chain token picture
   lib/intents.ts         NEAR Intents 1Click client
   lib/rhea.ts            Rhea smart router + v2.ref-finance.near tx builder
   lib/dcl.ts             Rhea DCL pool index, quotes, swap tx builder

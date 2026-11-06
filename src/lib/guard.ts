@@ -13,6 +13,17 @@ export const DEFAULT_POLICY: GuardPolicy = { maxNearPerAction: 5, maxUsdPerActio
 
 const DEX = new Set(["v2.ref-finance.near", "dclv2.ref-labs.near"]);
 const ALLOWED_METHODS = new Set(["near_deposit", "storage_deposit", "ft_transfer_call", "ft_transfer"]);
+// Extra methods only allowed for one kind of card, and only on one specific contract.
+const KIND_METHODS: Record<string, { method: string; receiver: string }[]> = {
+  launch: [
+    { method: "launch_meme", receiver: "v2-launchpad.justhoot.near" },
+    { method: "launch", receiver: "nearlytrade.near" },
+  ],
+  lp: [
+    { method: "register_tokens", receiver: "v2.ref-finance.near" },
+    { method: "add_liquidity", receiver: "v2.ref-finance.near" },
+  ],
+};
 const MAX_STORAGE_DEPOSIT = 10n ** 22n; // 0.01 NEAR — storage registration should never cost more
 
 export type GuardResult = { ok: true } | { ok: false; reasons: string[] };
@@ -37,6 +48,8 @@ export function checkCard(card: ActionCard, policy: GuardPolicy, accountId?: str
       }
       const { methodName, args, deposit: dep } = a.params;
       const ar = args as Record<string, string>;
+      const special = KIND_METHODS[card.kind]?.some((k) => k.method === methodName && k.receiver === tx.receiverId);
+      if (special) continue;
       if (!ALLOWED_METHODS.has(methodName)) {
         reasons.push(`Blocked method ${methodName} on ${tx.receiverId}.`);
         continue;

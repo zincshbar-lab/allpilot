@@ -62,6 +62,8 @@ export function appendTx(txs: PlannedTx[], tx: PlannedTx): PlannedTx[] {
   return txs;
 }
 
+export const ONE_YOCTO_DEPOSIT = ONE_YOCTO;
+
 export const ftTransferCall = (receiverId: string, amount: string, msg: string, tgas = 180) =>
   fc("ft_transfer_call", { receiver_id: receiverId, amount, msg }, tgas, ONE_YOCTO);
 

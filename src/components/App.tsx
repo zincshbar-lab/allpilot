@@ -7,6 +7,7 @@ import { ActionCardView } from "./ActionCardView";
 import { Pip } from "./Pip";
 import { RichText } from "./RichText";
 import { useWallet } from "./useWallet";
+import { fileToIcon } from "@/lib/image";
 
 type Msg = { role: "user" | "assistant"; content: string; cards?: ActionCard[] };
 
@@ -16,6 +17,8 @@ const SUGGESTIONS: Suggestion[] = [
   { label: "🔄 Swap 1 NEAR → USDC", text: "swap 1 near to usdc" },
   { label: "💌 Pay a friend", fill: "pay friend.near 1 usdc", select: "friend.near" },
   { label: "🔗 Payment link", text: "payment link 5 usdc for coffee" },
+  { label: "🚀 Launch a token", fill: "launch My Token $TICKER on hoot", select: "My Token $TICKER" },
+  { label: "💧 Add liquidity", text: "add lp 1 near and usdc" },
   { label: "🦉 Buy HOOT", text: "buy 0.1 near of hoot" },
   { label: "✨ Buy NEARLY", text: "buy 0.1 near of nearly" },
   { label: "🌈 Bridge USDC → Base", text: "bridge 5 usdc from near to base" },
@@ -29,6 +32,8 @@ const SKILLS: { icon: string; title: string; desc: string; s: Suggestion }[] = [
   { icon: "🐸", title: "Memecoins", desc: "Buy & sell on JustHoot, nearly.trade and Ref, with copycat checks", s: { label: "", text: "buy 0.1 near of hoot" } },
   { icon: "💌", title: "Pay anyone", desc: "They get the exact amount on any chain; you pay with any token", s: { label: "", fill: "pay friend.near 1 usdc with near", select: "friend.near" } },
   { icon: "🔗", title: "Payment links", desc: "A checkout link + website widget. Customers pay from any wallet or chain", s: { label: "", text: "payment link 10 usdc for order 42" } },
+  { icon: "🚀", title: "Launch a token", desc: "Create your own memecoin on JustHoot or nearly.trade, with a picture (📎)", s: { label: "", fill: "launch My Token $TICKER on nearly", select: "My Token $TICKER" } },
+  { icon: "💧", title: "Add liquidity", desc: "Provide liquidity to Rhea (Ref) pools and earn swap fees", s: { label: "", text: "add lp 1 near and usdc" } },
 ];
 
 type Trending = {
@@ -42,7 +47,7 @@ export default function App() {
     {
       role: "assistant",
       content:
-        "Hi, I'm Pip! 🦉✨ Tell me what you want to do in plain words. I can swap on NEAR Intents (like near.com), bridge to other chains, buy memecoins on JustHoot, nearly.trade and Ref, pay anyone on any chain, and make payment links so others can pay you with any token. I only suggest — your wallet signs.",
+        "Hi, I'm Pip! 🦉✨ Tell me what you want to do in plain words. I can swap on NEAR Intents (like near.com), bridge to other chains, buy memecoins on JustHoot, nearly.trade and Ref, pay anyone on any chain, make payment links, launch your own memecoin (📎 to add its picture), and add liquidity on Ref. I only suggest — your wallet signs.",
     },
   ]);
   const [input, setInput] = useState("");
@@ -53,6 +58,19 @@ export default function App() {
   const [trending, setTrending] = useState<Trending>();
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [icon, setIcon] = useState<string>();
+  const [iconError, setIconError] = useState<string>();
+
+  async function onPickImage(file?: File) {
+    setIconError(undefined);
+    if (!file) return;
+    try {
+      setIcon(await fileToIcon(file));
+    } catch (e) {
+      setIconError(e instanceof Error ? e.message : String(e));
+    }
+  }
 
   function applySuggestion(s: Suggestion) {
     if (s.text) return send(s.text);
@@ -90,7 +108,7 @@ export default function App() {
       const res: ChatResponse = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: next.map(({ role, content }) => ({ role, content })), accountId: wallet.accountId }),
+        body: JSON.stringify({ messages: next.map(({ role, content }) => ({ role, content })), accountId: wallet.accountId, icon }),
       }).then((r) => r.json());
       setMode(res.mode);
       setMsgs((m) => [...m, { role: "assistant", content: res.reply, cards: res.cards }]);
@@ -185,6 +203,19 @@ export default function App() {
                 </button>
               ))}
             </div>
+            {(icon || iconError) && (
+              <div className="flex items-center gap-2 mb-2 text-xs">
+                {icon && (
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element -- local data URL preview */}
+                    <img src={icon} alt="Token picture" className="w-8 h-8 rounded-full border-2 border-line object-cover" />
+                    <span className="text-ink-soft">Token picture ready — it&apos;ll be used for your next launch</span>
+                    <button type="button" className="underline text-ink-soft hover:text-ink" onClick={() => setIcon(undefined)}>remove</button>
+                  </>
+                )}
+                {iconError && <span className="text-danger">{iconError}</span>}
+              </div>
+            )}
             <form
               className="flex gap-2"
               onSubmit={(e) => {
@@ -192,6 +223,19 @@ export default function App() {
                 send(input);
               }}
             >
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  onPickImage(e.target.files?.[0]);
+                  e.target.value = "";
+                }}
+              />
+              <button type="button" className="btn bg-surface-2 border-2 border-line px-3" onClick={() => fileRef.current?.click()} aria-label="Upload token picture" title="Upload a token picture">
+                📎
+              </button>
               <input
                 ref={inputRef}
                 value={input}

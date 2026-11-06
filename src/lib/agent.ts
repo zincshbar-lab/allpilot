@@ -5,6 +5,8 @@ import OpenAI from "openai";
 import type { ActionCard, ChatMessage, ChatResponse } from "./cards";
 import { bridge, getBalances, listBridgeChains, memeTrade, swap, trendingMemes } from "./actions";
 import { pay, paymentLink } from "./pay";
+import { launchToken, normalizeLaunchpad } from "./launch";
+import { addLiquidity } from "./liquidity";
 
 const SYSTEM = `You are Pip, the cheerful co-pilot inside Allpilot — a cute AI trading buddy on NEAR.
 You help the user:
@@ -12,7 +14,9 @@ You help the user:
 2. bridge assets between NEAR and other chains with NEAR Intents,
 3. buy or sell memecoins launched on JustHoot ("hoot") and nearly.trade ("nearly"), or listed on Rhea/Ref,
 4. pay anyone an exact amount on any chain, paying with whatever token they hold ("Pay with Intents"),
-5. create payment links / a checkout widget so others can pay them from any wallet or chain.
+5. create payment links / a checkout widget so others can pay them from any wallet or chain,
+6. launch a brand-new memecoin on JustHoot or nearly.trade (with a token picture the user uploads),
+7. add liquidity to Rhea (Ref) classic pools.
 
 Rules:
 - ALWAYS use tools to get quotes. Never invent prices, amounts, contracts or addresses.
@@ -22,6 +26,13 @@ Rules:
 - Keep replies short, warm and playful (1–3 sentences, an emoji is fine). Don't repeat the numbers already shown on the card.
 - For payments, the recipient gets EXACTLY the amount; the payer may pay in another token/chain. Always repeat the recipient so the user can double-check it. Never guess a recipient address.
 - A payment link with no recipient goes to the connected wallet; if none is connected, ask who should receive.
+- Token launches: you need launchpad, name and ticker. If the launchpad isn't given, ask which one, briefly comparing them:
+  JustHoot = opens at a $5,000 value, ~0.06–0.1 NEAR cost, ticker 2–10 chars, description/links added on its site later;
+  nearly.trade = ~0.2 NEAR cost, ticker 1–12 chars, description + website/twitter/telegram stored on-chain.
+  A first buy (dev buy) is optional. If no picture is uploaded yet, tell them they can tap 📎 to add one before signing.
+  Launches are permanent — make sure the name and ticker are what they want.
+- Liquidity: you need two tokens and the amount of the first; the second is matched to the pool ratio. Mention impermanent loss briefly.
+- NEVER substitute a different token, chain, launchpad or recipient than the user asked for. If what they asked isn't possible, say so and ask what they'd like instead.
 - Not financial advice. If asked what to buy, you can show trending/verified tokens but don't recommend.`;
 
 const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
@@ -138,6 +149,44 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "launch_token",
+      description: "Prepare a new memecoin launch on JustHoot or nearly.trade (the user signs). Uses the picture the user uploaded, if any.",
+      parameters: {
+        type: "object",
+        properties: {
+          launchpad: { type: "string", enum: ["justhoot", "nearly"] },
+          name: { type: "string", description: "Token name, 1–32 chars" },
+          symbol: { type: "string", description: "Ticker, letters/digits only" },
+          description: { type: "string", description: "nearly.trade only, max 500 chars" },
+          website: { type: "string" },
+          twitter: { type: "string" },
+          telegram: { type: "string" },
+          first_buy_near: { type: "string", description: "Optional NEAR to buy at launch (dev buy)" },
+        },
+        required: ["launchpad", "name", "symbol"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "add_liquidity",
+      description: "Add liquidity to a Rhea (Ref) classic pool. The second token amount is matched to the pool ratio.",
+      parameters: {
+        type: "object",
+        properties: {
+          token_a: { type: "string", description: "First token (symbol or contract), e.g. NEAR" },
+          amount_a: { type: "string", description: "Amount of token_a to deposit" },
+          token_b: { type: "string", description: "Second token, e.g. USDC" },
+          pool_id: { type: "number", description: "Optional specific Rhea pool id" },
+        },
+        required: ["token_a", "amount_a", "token_b"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "bridge_chains",
       description: "List chains NEAR Intents supports, optionally for one token symbol.",
       parameters: { type: "object", properties: { symbol: { type: "string" } } },
@@ -145,7 +194,7 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   },
 ];
 
-type Ctx = { accountId?: string; cards: ActionCard[]; baseUrl?: string };
+type Ctx = { accountId?: string; cards: ActionCard[]; baseUrl?: string; icon?: string };
 
 function cardSummary(c: ActionCard) {
   return {
@@ -203,19 +252,36 @@ async function runTool(name: string, args: Record<string, unknown>, ctx: Ctx): P
       ctx.cards.push(c);
       return { ...cardSummary(c), url: c.checkout?.url };
     }
+    case "launch_token": {
+      const launchpad = normalizeLaunchpad(String(args.launchpad ?? ""));
+      if (!launchpad) return { error: "Which launchpad: JustHoot or nearly.trade?" };
+      const c = await launchToken({
+        launchpad, name: String(args.name), symbol: String(args.symbol),
+        description: args.description ? String(args.description) : undefined, website: args.website ? String(args.website) : undefined,
+        twitter: args.twitter ? String(args.twitter) : undefined, telegram: args.telegram ? String(args.telegram) : undefined,
+        firstBuyNear: args.first_buy_near ? String(args.first_buy_near) : undefined, icon: ctx.icon, accountId: ctx.accountId,
+      });
+      ctx.cards.push(c);
+      return { ...cardSummary(c), picture_uploaded: !!c.icon };
+    }
+    case "add_liquidity": {
+      const c = await addLiquidity({ tokenA: String(args.token_a), tokenB: String(args.token_b), amountA: String(args.amount_a), poolId: typeof args.pool_id === "number" ? args.pool_id : undefined, accountId: ctx.accountId });
+      ctx.cards.push(c);
+      return cardSummary(c);
+    }
     case "bridge_chains":
       return { chains: await listBridgeChains(args.symbol ? String(args.symbol) : undefined) };
   }
   return { error: `Unknown tool ${name}` };
 }
 
-export async function chat(messages: ChatMessage[], accountId?: string, baseUrl?: string): Promise<ChatResponse> {
-  const ctx: Ctx = { accountId, cards: [], baseUrl };
+export async function chat(messages: ChatMessage[], accountId?: string, baseUrl?: string, icon?: string): Promise<ChatResponse> {
+  const ctx: Ctx = { accountId, cards: [], baseUrl, icon };
   if (!process.env.NEAR_AI_API_KEY) return offline(messages, ctx);
 
   // Instant path: a clear trade command ("buy 0.1 near of hoot", "swap 1 near to usdc") doesn't need the
   // LLM — parse it directly and answer in ~1s. Anything chatty or ambiguous still goes to NEAR AI.
-  const fast = await offline(messages, { accountId, cards: [], baseUrl }, { tradesOnly: true });
+  const fast = await offline(messages, { accountId, cards: [], baseUrl, icon }, { tradesOnly: true });
   if (fast) return { ...fast, mode: "near-ai" };
 
   const client = new OpenAI({
@@ -238,7 +304,7 @@ export async function chat(messages: ChatMessage[], accountId?: string, baseUrl?
       // NEAR AI unavailable (no credits, outage, bad key): keep the app working with the offline parser.
       if (step > 0 && ctx.cards.length) return { reply: "Here's what I found! ✨", cards: ctx.cards, mode: "near-ai" };
       console.warn("NEAR AI call failed, using offline brain:", e instanceof Error ? e.message : e);
-      return (await offline(messages, { accountId, cards: [], baseUrl }))!;
+      return (await offline(messages, { accountId, cards: [], baseUrl, icon }))!;
     }
     const msg = res.choices[0].message;
     if (!msg.tool_calls?.length) return { reply: msg.content ?? "", cards: ctx.cards, mode: "near-ai" };
@@ -269,6 +335,18 @@ export async function offline(messages: ChatMessage[], ctx: Ctx, opts?: { trades
   const reply = (r: string): ChatResponse => ({ reply: r, cards: ctx.cards, mode: "offline" });
   try {
     let m: RegExpMatchArray | null;
+    const rawText = messages.at(-1)?.content ?? "";
+    // launch Pip Coin $PIP on hoot [with first buy 0.5 near]   (case kept from the raw message)
+    if ((m = rawText.match(/(?:launch|create|deploy)\s+(?:a\s+|my\s+)?(?:new\s+)?(?:token|coin|meme(?:coin)?)?\s*(?:called|named)?\s*"?([A-Za-z0-9 ]{1,32}?)"?\s+\(?\$([A-Za-z0-9]{1,12})\)?\s+on\s+(just\s?hoot|hoot|nearly(?:\.trade)?)(?:.*?first\s+buy\s+(?:of\s+)?(\d+(?:\.\d+)?))?/i))) {
+      const [, name, symbol, pad, firstBuy] = m;
+      await runTool("launch_token", { launchpad: pad, name: name.trim(), symbol, first_buy_near: firstBuy }, ctx);
+      return reply(`Launch card ready 🚀${ctx.icon ? "" : " Tip: tap 📎 to add a token picture, then ask again."} Check the name and ticker — launches are permanent.`);
+    }
+    // add lp 1 near and usdc [on ref]   |   add liquidity 1 near + usdc
+    if ((m = text.match(new RegExp(`add\\s+(?:lp|liquidity)\\s+(?:with\\s+|of\\s+)?${NUM}\\s+${TOK}\\s+(?:and|\\+|with|/)\\s+${TOK}`)))) {
+      await runTool("add_liquidity", { amount_a: m[1], token_a: m[2], token_b: m[3] }, ctx);
+      return reply("Liquidity card ready 💧 The second token is matched to the pool's ratio. Sign the steps in order.");
+    }
     // payment link 5 usdc [to alice.near] [on base] [for order 42]
     if ((m = text.match(new RegExp(`(?:payment|pay|checkout|invoice)\\s+link\\s+(?:for\\s+)?${NUM}\\s+${TOK}(?:\\s+to\\s+([^\\s]+))?(?:\\s+on\\s+([a-z]+))?(?:\\s+for\\s+(.+))?$`)))) {
       const [, amount, token, to, chain, memo] = m;
@@ -324,7 +402,7 @@ export async function offline(messages: ChatMessage[], ctx: Ctx, opts?: { trades
       return reply(b.map((x) => `${x.symbol}: ${x.amount}`).join(" · ") || "No balances found.");
     }
     return reply(
-      `I'm in offline mode (no NEAR AI key set), so I understand simple commands:\n• swap 1 near to usdc\n• swap 5 usdc to near on ref\n• buy 0.2 near of hoot\n• sell 1000 nearly\n• bridge 5 usdc from near to base 0xYourAddress\n• pay alice.near 5 usdc (add "with near" to pay in NEAR)\n• payment link 10 usdc for order 42\n• trending memes · balance`,
+      `I'm in offline mode (no NEAR AI key set), so I understand simple commands:\n• swap 1 near to usdc\n• swap 5 usdc to near on ref\n• buy 0.2 near of hoot\n• sell 1000 nearly\n• bridge 5 usdc from near to base 0xYourAddress\n• pay alice.near 5 usdc (add "with near" to pay in NEAR)\n• payment link 10 usdc for order 42\n• launch Pip Coin $PIP on hoot (tap 📎 to add a picture)\n• add lp 1 near and usdc\n• trending memes · balance`,
     );
   } catch (e) {
     if (opts?.tradesOnly) return null; // let the LLM explain or recover

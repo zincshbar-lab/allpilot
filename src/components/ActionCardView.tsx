@@ -16,6 +16,8 @@ const KIND: Record<ActionCard["kind"], { icon: string; tint: string }> = {
   meme: { icon: "🐸", tint: "bg-butter-soft" },
   pay: { icon: "💌", tint: "bg-pink-soft" },
   link: { icon: "🔗", tint: "bg-pink-soft" },
+  launch: { icon: "🚀", tint: "bg-butter-soft" },
+  lp: { icon: "💧", tint: "bg-mint-soft" },
   info: { icon: "💡", tint: "bg-pink-soft" },
 };
 
@@ -104,7 +106,12 @@ export function ActionCardView({
   return (
     <div className="card pop mt-3 overflow-hidden">
       <div className={`flex flex-wrap items-center gap-2 px-4 py-3 ${kind.tint}`}>
-        <span className="text-xl" aria-hidden>{kind.icon}</span>
+        {card.icon ? (
+          // eslint-disable-next-line @next/next/no-img-element -- user-uploaded data URL preview
+          <img src={card.icon} alt="Token picture" className="w-9 h-9 rounded-full border-2 border-line object-cover bg-surface" />
+        ) : (
+          <span className="text-xl" aria-hidden>{kind.icon}</span>
+        )}
         <h3 className="font-semibold leading-tight flex-1 min-w-[10rem] break-words">{card.title}</h3>
         {venue && (
           <span className={`text-xs font-semibold rounded-full px-2.5 py-1 border-2 border-line ${venue.cls} whitespace-nowrap`}>
