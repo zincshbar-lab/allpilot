@@ -102,3 +102,51 @@ export function ago(ms: number): string {
   if (d < 730) return `${Math.round(d / 30.4)} months`;
   return `${(d / 365).toFixed(1)} years`;
 }
+
+// ---------------------------------------------------------------- logs (for PnL)
+
+export type TxLogs = { hash: string; signer: string; timestampMs: number; logs: { receiver: string; log: string }[] };
+
+/** Signed transactions of an account, newest first, paging with resume tokens. */
+export async function signedTxHashes(accountId: string, max = 300): Promise<{ hash: string; timestampMs: number }[]> {
+  const out: { hash: string; timestampMs: number }[] = [];
+  let resume: string | undefined;
+  while (out.length < max) {
+    const d = await post<{ account_txs?: AccountTx[]; resume_token?: string }>(`${TX}/v0/account`, {
+      account_id: accountId,
+      is_signer: true,
+      desc: true,
+      limit: Math.min(200, max - out.length),
+      ...(resume ? { resume_token: resume } : {}),
+    });
+    const txs = d.account_txs ?? [];
+    out.push(...txs.map((t) => ({ hash: t.transaction_hash, timestampMs: Number(t.tx_block_timestamp) / 1e6 })));
+    if (!d.resume_token || txs.length === 0) break;
+    resume = d.resume_token;
+  }
+  return out;
+}
+
+export async function txLogs(hashes: string[]): Promise<TxLogs[]> {
+  type Raw = {
+    transaction: { hash: string; signer_id: string };
+    execution_outcome?: { block_timestamp?: number | string };
+    receipts?: { receipt?: { receiver_id?: string }; execution_outcome?: { outcome?: { logs?: string[] } } }[];
+  };
+  const out: TxLogs[] = [];
+  const batches: string[][] = [];
+  for (let i = 0; i < hashes.length; i += 20) batches.push(hashes.slice(i, i + 20));
+  // a few batches at a time — the free API rate-limits bursts
+  for (let i = 0; i < batches.length; i += 3) {
+    const results = await Promise.all(batches.slice(i, i + 3).map((b) => post<{ transactions?: Raw[] }>(`${TX}/v0/transactions`, { tx_hashes: b }).catch(() => ({ transactions: [] }))));
+    for (const d of results)
+      for (const t of d.transactions ?? [])
+        out.push({
+          hash: t.transaction.hash,
+          signer: t.transaction.signer_id,
+          timestampMs: Number(t.execution_outcome?.block_timestamp ?? 0) / 1e6,
+          logs: (t.receipts ?? []).flatMap((r) => (r.execution_outcome?.outcome?.logs ?? []).map((log) => ({ receiver: r.receipt?.receiver_id ?? "", log }))),
+        });
+  }
+  return out;
+}

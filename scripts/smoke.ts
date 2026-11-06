@@ -14,6 +14,7 @@ import { stake, stakingOverview } from "../src/lib/staking";
 import { checkCard } from "../src/lib/guard";
 import { portfolioCard } from "../src/lib/portfolio";
 import { analyzeToken } from "../src/lib/analyze";
+import { pnlCard } from "../src/lib/pnl";
 
 const acct = process.argv[2] ?? "zavodil.near";
 const POLICY = { maxNearPerAction: 1000, maxUsdPerAction: 100000 };
@@ -26,6 +27,7 @@ function show(name: string, c: ActionCard) {
   console.log(`\n✅ ${name}: ${c.title}${c.venue ? ` [${c.venue}]` : ""}`);
   for (const l of c.lines) console.log(`   ${l.label}: ${l.value}`);
   for (const s of c.sections ?? []) for (const l of s.lines) console.log(`   ${s.title} · ${l.label}: ${l.value}`);
+  for (const r of (c.pnlRows ?? []).slice(0, 6)) console.log(`   ${r.symbol}: ${r.trades} · in ${r.invested} · total ${r.total} ${r.roi}`);
   for (const r of (c.rows ?? []).slice(0, 6)) console.log(`   ${r.symbol}: ${r.amount} @ ${r.price} = ${r.value}${r.badge ? ` [${r.badge}]` : ""}`);
   for (const w of c.warnings) console.log(`   ⚠ ${w}`);
   const txs = c.transactions.map((t) => `${t.receiverId}(${t.actions.map((a) => ("methodName" in a.params ? a.params.methodName : a.type)).join("+")})`);
@@ -59,6 +61,7 @@ async function run(name: string, f: () => Promise<ActionCard>) {
   await run("lend (supply USDC)", () => supply({ token: "usdc", amount: "10", accountId: acct }));
   await run("stake (LiNEAR)", () => stake({ amount: "1", provider: "linear", accountId: acct }));
   await run("portfolio (memes priced)", () => portfolioCard(acct));
+  await run("pnl (a public meme trader)", () => pnlCard("wowzer.near"));
   await run("analyze token (verified HOOT)", () => analyzeToken("hoot-8ecf65.launchpad.justhoot.near"));
   await run("analyze token (copycat HOOT)", () => analyzeToken("hoot-17.nearlytrade.near"));
   await run("stake (validator)", () => stake({ amount: "1", provider: "astro-stakers.poolv1.near", accountId: acct }));

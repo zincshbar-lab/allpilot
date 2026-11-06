@@ -11,9 +11,10 @@ import { borrow, lendingOverview, repay, supply, withdrawSupply } from "./lendin
 import { stake, stakingOverview, unstake, withdrawUnstaked } from "./staking";
 import { analyzeToken, looksLikeAddress } from "./analyze";
 import { portfolioCard } from "./portfolio";
+import { pnlCard } from "./pnl";
 import { resolveToken } from "./tokens";
 
-const SYSTEM = `You are Pip, the cheerful co-pilot inside Allpilot — a cute AI trading buddy on NEAR.
+const SYSTEM = `You are Pip, the cheerful little robot pilot inside Allpilot — a cute AI co-pilot for NEAR.
 You help the user:
 1. swap tokens on NEAR (default venue: NEAR Intents, the engine behind near.com swaps; use venue "rhea" when they mention Ref/Rhea),
 2. bridge assets between NEAR and other chains with NEAR Intents,
@@ -24,6 +25,7 @@ You help the user:
 7. add liquidity to Rhea (Ref) classic pools,
 8. lend & borrow on Rhea Lending (formerly Burrow): supply, borrow, repay, withdraw — always with the health factor,
 10. show the user's portfolio — every token they hold, memes included, with live prices and USD value,
+12. show profit & loss (PnL) on the user's meme buys and sells — realized and unrealized, per token,
 11. analyze any token contract (or wallet): launchpad, creator, creator wallet age/funder/other launches, holders, price, taxes, copycats, risk signals.
 9. stake NEAR: liquid staking (LiNEAR, Rhea rNEAR, Meta Pool stNEAR — tradable, instant exit via swap) or native staking with a validator (unstake takes ~2–3 days).
 
@@ -46,6 +48,7 @@ Rules:
 - Staking: if they don't say where, ask "liquid (LiNEAR / rNEAR / stNEAR — keep a tradable token, exit instantly) or a validator (native, ~2–3 day unstake)?" Use lending_info / staking_info for rates and positions instead of guessing.
 - If the user pastes a contract address, or asks whether a token is safe/legit/a rug, call analyze_token. Summarize the risk signals in 1–2 lines; never call a token "safe" — say what the signals show.
 - For "my balances / portfolio / holdings / what do I hold", call portfolio (needs a connected wallet).
+- For "my pnl / profit / how much did I make or lose", call pnl (optionally for one token). Report the totals briefly; be honest about losses.
 - NEVER substitute a different token, chain, launchpad or recipient than the user asked for. If what they asked isn't possible, say so and ask what they'd like instead.
 - Not financial advice. If asked what to buy, you can show trending/verified tokens but don't recommend.`;
 
@@ -119,6 +122,14 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
       name: "portfolio",
       description: "The connected wallet's full portfolio: every token held (memes included) with live price and USD value. Prefer this over get_balances.",
       parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "pnl",
+      description: "Profit & loss on the connected wallet's buys and sells (from on-chain swap history): realized, unrealized, per token, ROI.",
+      parameters: { type: "object", properties: { token: { type: "string", description: "Optional: one token symbol or contract" } } },
     },
   },
   {
@@ -363,6 +374,18 @@ async function runTool(name: string, args: Record<string, unknown>, ctx: Ctx): P
       ctx.cards.push(c);
       return { title: c.title, top: c.rows?.slice(0, 8).map((r) => `${r.symbol}: ${r.amount} = ${r.value}`), warnings: c.warnings };
     }
+    case "pnl": {
+      if (!ctx.accountId) return { error: "Wallet not connected — ask them to connect to see their PnL." };
+      let tokenId: string | undefined;
+      const q = args.token ? String(args.token) : undefined;
+      if (q) {
+        tokenId = looksLikeAddress(q) ?? (await resolveToken(q)).best?.id;
+        if (!tokenId || tokenId === "near") return { error: `I couldn't find a token "${q}".` };
+      }
+      const c = await pnlCard(ctx.accountId, q, tokenId);
+      ctx.cards.push(c);
+      return { title: c.title, summary: c.lines.map((l) => `${l.label}: ${l.value}`), top: c.pnlRows?.slice(0, 6).map((r) => `${r.symbol}: ${r.total} NEAR (${r.roi})`), notes: c.warnings };
+    }
     case "analyze_token": {
       const q = String(args.token ?? "");
       let id = looksLikeAddress(q);
@@ -484,6 +507,12 @@ export async function offline(messages: ChatMessage[], ctx: Ctx, opts?: { trades
       await runTool("analyze_token", { token: m[1] }, ctx);
       return reply("Analysis ready 🔍 These are signals, not a verdict.");
     }
+    // pnl / profit (optionally for one token)
+    if ((m = text.match(/^(?:show\s+)?(?:my\s+)?(?:pnl|p&l|p\/l|profits?(?:\s+and\s+loss(?:es)?)?|gains?)(?:\s+(?:on|for)\s+\$?([a-z0-9._-]+))?\s*\??$/))) {
+      if (!ctx.accountId) return reply("Connect your wallet first and I'll work out your profit & loss 📊");
+      await runTool("pnl", { token: m[1] }, ctx);
+      return reply("Your PnL 📊 Rebuilt from your on-chain swaps — realized from sells, unrealized at today's prices.");
+    }
     // portfolio / balances / holdings
     if (/^(?:show\s+)?(?:my\s+)?(?:portfolio|balances?|holdings|wallet)\s*\??$|what do i (?:hold|have)/.test(text)) {
       if (!ctx.accountId) return reply("Connect your wallet first (top-right) and I'll show your whole portfolio 👛");
@@ -564,7 +593,7 @@ export async function offline(messages: ChatMessage[], ctx: Ctx, opts?: { trades
     if ((m = text.match(new RegExp(`(?:buy|ape)\\s+${NUM}\\s*near\\s+(?:of|into|worth of)?\\s*${TOK}`))) || (m = text.match(new RegExp(`(?:buy|ape)\\s+${TOK}\\s+with\\s+${NUM}\\s*near`)))) {
       const [amount, token] = /^\d/.test(m[1]) ? [m[1], m[2]] : [m[2], m[1]];
       await runTool("trade_meme", { token, amount, side: "buy" }, ctx);
-      return reply("Meme snack incoming 🦉 Review the card — memecoins are spicy, so only spend what you're happy to lose.");
+      return reply("Meme snack incoming 🍿 Review the card — memecoins are spicy, so only spend what you're happy to lose.");
     }
     // sell 1000 hoot
     if ((m = text.match(new RegExp(`sell\\s+${NUM}\\s+${TOK}`)))) {
@@ -590,7 +619,7 @@ export async function offline(messages: ChatMessage[], ctx: Ctx, opts?: { trades
       return reply(b.map((x) => `${x.symbol}: ${x.amount}`).join(" · ") || "No balances found.");
     }
     return reply(
-      `I'm in offline mode (no NEAR AI key set), so I understand simple commands:\n• swap 1 near to usdc\n• swap 5 usdc to near on ref\n• buy 0.2 near of hoot\n• sell 1000 nearly\n• bridge 5 usdc from near to base 0xYourAddress\n• pay alice.near 5 usdc (add "with near" to pay in NEAR)\n• payment link 10 usdc for order 42\n• launch Pip Coin $PIP on hoot (tap 📎 to add a picture)\n• add lp 1 near and usdc\n• supply 10 usdc · borrow 5 usdc · repay all usdc\n• stake 5 near with linear · unstake all linear\n• my portfolio · paste any token address to analyze it\n• trending memes · balance`,
+      `I'm in offline mode (no NEAR AI key set), so I understand simple commands:\n• swap 1 near to usdc\n• swap 5 usdc to near on ref\n• buy 0.2 near of hoot\n• sell 1000 nearly\n• bridge 5 usdc from near to base 0xYourAddress\n• pay alice.near 5 usdc (add "with near" to pay in NEAR)\n• payment link 10 usdc for order 42\n• launch Pip Coin $PIP on hoot (tap 📎 to add a picture)\n• add lp 1 near and usdc\n• supply 10 usdc · borrow 5 usdc · repay all usdc\n• stake 5 near with linear · unstake all linear\n• my portfolio · my pnl · paste any token address to analyze it\n• trending memes · balance`,
     );
   } catch (e) {
     if (opts?.tradesOnly) return null; // let the LLM explain or recover

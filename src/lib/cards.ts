@@ -7,7 +7,7 @@ export type Venue = "near-intents" | "rhea" | "rhea-dcl" | "direct" | "rhea-lend
 
 export type ActionCard = {
   id: string;
-  kind: "swap" | "bridge" | "meme" | "pay" | "link" | "launch" | "lp" | "lend" | "stake" | "portfolio" | "analysis" | "info";
+  kind: "swap" | "bridge" | "meme" | "pay" | "link" | "launch" | "lp" | "lend" | "stake" | "portfolio" | "analysis" | "pnl" | "info";
   title: string;
   venue?: Venue;
   launchpad?: "justhoot" | "nearly" | null;
@@ -18,6 +18,8 @@ export type ActionCard = {
   sections?: CardSection[];
   /** Token table (portfolio). */
   rows?: { token: string; symbol: string; amount: string; price: string; value: string; badge?: string; note?: string }[];
+  /** Per-token profit & loss (pnl). */
+  pnlRows?: { token: string; symbol: string; badge?: string; trades: string; invested: string; realized: string; unrealized: string; total: string; roi: string; up: boolean; held: string; unknown?: boolean }[];
   warnings: string[];
   /** NEAR-side transactions for the connected wallet to sign. Empty when it is a quote only. */
   transactions: PlannedTx[];

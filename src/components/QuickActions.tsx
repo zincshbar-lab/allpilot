@@ -20,6 +20,7 @@ const ICONS = {
   drop: <path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11Z" />,
   owl: <path d="M6 5l2 2h8l2-2v8a6 6 0 0 1-12 0V5Zm4 6h.01M14 11h.01M11 14h2" />,
   chevron: <path d="M6 9l6 6 6-6" />,
+  chart: <path d="M4 20V10m6 10V4m6 16v-7m4 7H2" />,
   trend: <path d="M3 17l6-6 4 4 8-8M15 7h6v6" />,
   bank: <path d="M3 10l9-6 9 6M5 10v8m4-8v8m6-8v8m4-8v8M3 20h18" />,
   coins: <path d="M8 8a5 3 0 1 0 0 .01M3 8v4c0 1.7 2.2 3 5 3s5-1.3 5-3V8M11 14.5c.6.3 1.3.5 2 .5 2.8 0 5-1.3 5-3V8m-5 8v4c0 1.7 2.2 3 5 3s5-1.3 5-3v-4" />,
@@ -38,6 +39,7 @@ function Icon({ name, className = "" }: { name: keyof typeof ICONS; className?: 
 const MAIN: Pill[] = [
   { icon: "rocket", label: "Launch a token", featured: true, fill: "launch My Token $TICKER on nearly", select: "My Token $TICKER" },
   { icon: "wallet", label: "Portfolio", text: "my portfolio" },
+  { icon: "chart", label: "My PnL", text: "my pnl" },
   { icon: "trend", label: "Earn yield", text: "where can I earn yield on NEAR and USDC? compare staking and lending rates" },
   { icon: "swap", label: "Swap", text: "swap 1 near to usdc" },
   { icon: "pay", label: "Pay a friend", fill: "pay friend.near 1 usdc", select: "friend.near" },

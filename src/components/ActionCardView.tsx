@@ -24,6 +24,7 @@ const KIND: Record<ActionCard["kind"], { icon: string; tint: string }> = {
   stake: { icon: "🥩", tint: "bg-lav-soft" },
   portfolio: { icon: "👛", tint: "bg-mint-soft" },
   analysis: { icon: "🔍", tint: "bg-sky-soft" },
+  pnl: { icon: "📊", tint: "bg-butter-soft" },
   info: { icon: "💡", tint: "bg-pink-soft" },
 };
 
@@ -139,6 +140,7 @@ export function ActionCardView({
       </dl>}
 
       {card.rows && <PortfolioTable rows={card.rows} onAsk={onAsk} />}
+      {card.pnlRows && <PnlTable rows={card.pnlRows} onAsk={onAsk} />}
 
       {card.sections?.map((s) => (
         <section key={s.title} className="px-4 pt-3">
@@ -295,5 +297,42 @@ function PortfolioTable({ rows, onAsk }: { rows: NonNullable<ActionCard["rows"]>
         ))}
       </ul>
     </div>
+  );
+}
+
+function PnlTable({ rows, onAsk }: { rows: NonNullable<ActionCard["pnlRows"]>; onAsk?: (t: string) => void }) {
+  if (!rows.length) return null;
+  return (
+    <ul className="px-4 pb-3 divide-y-2 divide-line">
+      {rows.map((r) => (
+        <li key={r.token} className="py-2 text-sm">
+          <div className="flex items-start gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-semibold truncate max-w-[9rem]" title={r.token}>{r.symbol}</span>
+                {r.badge && <span className="text-[10px] rounded-full px-1.5 py-0.5 border border-line bg-butter-soft">{r.badge}</span>}
+                {onAsk && (
+                  <button className="text-[11px] text-ink-soft hover:text-ink" onClick={() => onAsk(`analyze ${r.token}`)} title={`Analyze ${r.token}`}>
+                    🔍
+                  </button>
+                )}
+              </div>
+              <div className="text-xs text-ink-soft">{r.trades} · {r.held}</div>
+            </div>
+            <div className="text-right shrink-0">
+              <div className={`font-bold ${r.unknown ? "text-ink-soft" : r.up ? "text-[#2f9e6e]" : "text-danger"}`}>
+                {r.total === "—" ? "—" : `${r.total} NEAR`}
+              </div>
+              {r.roi && <div className={`text-xs font-semibold ${r.up ? "text-[#2f9e6e]" : "text-danger"}`}>{r.roi}</div>}
+            </div>
+          </div>
+          <div className="mt-1 grid grid-cols-3 gap-2 text-[11px] text-ink-soft">
+            <span>in: {r.invested}</span>
+            <span className="text-center">realized: {r.realized}</span>
+            <span className="text-right">open: {r.unrealized}</span>
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }

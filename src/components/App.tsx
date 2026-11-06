@@ -35,6 +35,7 @@ const SKILLS: { icon: string; title: string; desc: string; s: Suggestion }[] = [
   { icon: "💧", title: "Add liquidity", desc: "Provide liquidity to Rhea (Ref) pools and earn swap fees", s: { label: "", text: "add lp 1 near and usdc" } },
   { icon: "🏦", title: "Lend & borrow", desc: "Supply to earn interest, borrow against it on Rhea Lending — with your health factor", s: { label: "", fill: "supply 10 usdc", select: "10" } },
   { icon: "👛", title: "Portfolio", desc: "Everything you hold, memes included, with live prices", s: { label: "", text: "my portfolio" } },
+  { icon: "📊", title: "My PnL", desc: "Profit & loss on your meme buys and sells, realized and unrealized", s: { label: "", text: "my pnl" } },
   { icon: "🔍", title: "Analyze a token", desc: "Paste any contract: launchpad, creator, wallet age, funder, holders, risks", s: { label: "", fill: "analyze paste-contract-address.near", select: "paste-contract-address.near" } },
   { icon: "🥩", title: "Stake NEAR", desc: "Liquid (LiNEAR, rNEAR, stNEAR) or with a validator", s: { label: "", fill: "stake 5 near with linear", select: "5" } },
 ];
@@ -50,7 +51,7 @@ export default function App() {
     {
       role: "assistant",
       content:
-        "Hi, I'm Pip! 🦉✨ Tell me what you want to do in plain words. I can swap on NEAR Intents (like near.com), bridge to other chains, buy memecoins on JustHoot, nearly.trade and Ref, pay anyone on any chain, make payment links, launch your own memecoin (📎 to add its picture), add liquidity on Ref, lend & borrow, stake your NEAR, show your portfolio, and analyze any token you paste. I only suggest — your wallet signs.",
+        "Hi, I'm Pip, your AI co-pilot! 🤖✈️ Tell me what you want to do in plain words. I can swap on NEAR Intents (like near.com), bridge to other chains, buy memecoins on JustHoot, nearly.trade and Ref, pay anyone on any chain, make payment links, launch your own memecoin (📎 to add its picture), add liquidity on Ref, lend & borrow, stake your NEAR, show your portfolio and PnL, and analyze any token you paste. I only suggest — your wallet signs.",
     },
   ]);
   const [input, setInput] = useState("");
