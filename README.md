@@ -22,6 +22,8 @@ You chat with **Pip** in plain words. Pip fetches live quotes and turns your req
 | `buy 0.1 near of nearly` | Same for nearly.trade tokens (direct or 2-hop pools) | nearly.trade → Rhea DCL |
 | `sell 100 hoot` | Sells back to native NEAR | Rhea DCL |
 | `trending memes` | Verified memes + freshest nearly.trade launches (read on-chain from `nearlytrade.near`) | — |
+| `my portfolio` | Every token you hold, memes included, with a real USD price and value (🔍 on any row analyzes it) | FastNEAR + Rhea prices + live DCL pool quotes |
+| paste `idog.nearlytrade.near` (or a NearBlocks / launchpad link, or `analyze hoot`, `is X safe?`) | Token due-diligence report: launchpad, creator, creator wallet age / funder / tokens launched, holders, price, taxes, copycats, risk signals | FastNEAR tx history + on-chain views |
 | `pay alice.near 5 usdc` | Same token on NEAR: one direct `ft_transfer` to the recipient, no fee | Direct |
 | `pay alice.near 5 usdc with near` | Recipient gets **exactly** 5 USDC; you pay in NEAR (exact-output quote) | NEAR Intents |
 | `send 5 usdc to 0xAbc… on base` | Pay someone on another chain from your NEAR wallet | NEAR Intents |
@@ -44,7 +46,7 @@ You chat with **Pip** in plain words. Pip fetches live quotes and turns your req
 - **Launchpad factories**: `v2-launchpad.justhoot.near` (`launch_meme`) and `nearlytrade.near` (`launch`), each minting a NEP-141 token and opening its Rhea DCL pool in one transaction, priced live with `get_launch_deposit` / `quote_launch`.
 - **Rhea Lending** (`contract.main.burrow.near`, formerly Burrow): supply / borrow / repay / withdraw through `ft_transfer_call` and `execute_with_pyth`.
 - **Staking**: liquid staking with LiNEAR (`linear-protocol.near`), Rhea rNEAR (`lst.rhealab.near`) and Meta Pool stNEAR (`meta-pool.near`), and native staking with any `*.poolv1.near` validator.
-- **NEAR AI Cloud** (OpenAI-compatible, private inference) is the chat brain, with tool calling. Clear commands (`buy …`, `swap …`, `pay …`, `launch … on …`, `add lp …`, `supply …`, `borrow …`, `stake … with …`) take an instant path that skips the LLM (~1 s). Every network call has a timeout, and if NEAR AI is unavailable Pip falls back to the command parser.
+- **NEAR AI Cloud** (OpenAI-compatible, private inference) is the chat brain, with tool calling. Clear commands (`buy …`, `swap …`, `pay …`, `launch … on …`, `add lp …`, `supply …`, `borrow …`, `stake … with …`, a pasted address, `my portfolio`) take an instant path that skips the LLM (~1 s). Every network call has a timeout, and if NEAR AI is unavailable Pip falls back to the command parser.
 - **HOT's NEAR Connect** handles wallet connection: HOT, Meteor, Intear, Ledger, MyNearWallet, OKX, NEAR Mobile, Trezu, Nightly, Hana, Ethereum wallets (MetaMask etc. via EVM-on-NEAR) and NEAR CLI. The wallet list ships with the app (`src/lib/wallet-manifest.json`) as a fallback, so the picker is never empty if GitHub is slow or blocked.
 
 ### 💌 Pay with Intents (universal checkout)
@@ -94,6 +96,25 @@ Action amounts use each market's inner decimals (token decimals + `extra_decimal
 
 If you just say "stake 10 near", Pip asks liquid or validator. `staking_info` shows rates, popular validators and your staked balances.
 
+### 👛 Portfolio with real meme prices
+
+`my portfolio` (or the **Portfolio** pill) lists **every token the wallet holds**, from FastNEAR's `/v1/account/{id}/ft`, plus native NEAR. Each is priced in USD: first from Rhea's price list, and for fresh launchpad memes Rhea doesn't price, **live from their own pool** by quoting a sale of 1 token into wNEAR on Rhea DCL. Rows are sorted by value and tagged with their launchpad (JustHoot, nearly.trade, meme.cooking, tkn.near, NearPad…) or "verified". Dust under $0.01 is hidden, and tokens with no market are counted as $0 and flagged. Tap 🔍 on any row to analyze it.
+
+### 🔍 Token analysis (paste any contract address)
+
+Send just an address (`oyster.v2-launchpad.justhoot.near`), a NearBlocks / justhoot.fun / nearly.trade link, `analyze <symbol>` or `is <token> safe?`, and Pip builds a report:
+
+| Section | What's in it | Where it comes from |
+| --- | --- | --- |
+| 🪙 Token | name, supply, creation date & age, tx count, **tax** | `ft_metadata`, `ft_total_supply`, first tx via FastNEAR; JustHoot `get_config.transfer_fee_pips`, nearly.trade `get_tax` |
+| 🚀 Launchpad | which launchpad (JustHoot v1/v2, nearly.trade, meme.cooking, Rhea meme launchpad, tkn.near, NearPad, Shore Markets, token0, PrismPad, NearPaid, aidols, gra.fun… **or "unknown factory: X"**), the launch call, whether Allpilot can trade it, creator's first buy | token account suffix + the launch transaction |
+| 👤 Creator | creator wallet, **wallet age**, **funder / who created it** (e.g. a wallet relayer), activity, NEAR balance, **number of tokens launched** (exact on nearly.trade, else from their last 100 signed txs), how much of this token they still hold | the token's first transaction signer (or the launchpad's own record) → the creator's first transaction |
+| 👥 Holders | top-10 concentration (pools, Intents, DAOs excluded), largest wallet, % sitting in Rhea pools, holder count | FastNEAR `/v1/ft/{id}/top` |
+| 📈 Market | live price, market cap (FDV), all-time wNEAR volume | Rhea prices / DCL quote, DCL pool stats |
+| 🚦 Risk signals | 🟢/🟡/🔴 lines + overall low/medium/high: copycat of a verified symbol, fresh creator wallet (<7 days), serial launcher (≥5 tokens), creator holds >10%, creator dumped their first buy, top-10 >25/50%, few holders, brand new, tax, no market, unknown factory | all of the above |
+
+If the address is a wallet rather than a token, you get a wallet profile instead (age, funder, activity, tokens launched). It's always framed as signals, not a verdict.
+
 ### 🧠 Pip's tools (what the AI can call)
 
 The LLM never builds transactions itself. It calls these server-side tools (`src/lib/agent.ts`), and each one returns an **action card** with live numbers, warnings and unsigned transactions:
@@ -108,7 +129,8 @@ The LLM never builds transactions itself. It calls these server-side tools (`src
 | `add_liquidity` | Add liquidity to a Rhea classic pool |
 | `lending` · `lending_info` | Supply / borrow / repay / withdraw on Rhea Lending; markets, positions, health |
 | `stake` · `unstake` · `withdraw_unstaked` · `staking_info` | Liquid & validator staking; rates and your stakes |
-| `get_balances` | Your wallet balances |
+| `portfolio` · `get_balances` | Full portfolio with live prices (memes included); quick major-token balances |
+| `analyze_token` | Due-diligence report on a token contract (or wallet profile) |
 
 The system prompt makes Pip ask instead of guessing (launchpad, staking type, recipient), never substitute a different token, chain or recipient than the one asked for, and never give financial advice.
 
@@ -151,6 +173,8 @@ Open http://localhost:3000, then:
 9. Type `add lp 1 near and usdc`. You should see a 💧 card with the Rhea pool, its TVL, the USDC amount matched to the pool ratio, and 4 steps.
 10. Click **Earn yield**. Pip compares Rhea Lending APRs with staking options. Then type `supply 10 usdc`: you should see a 🏦 card with the live supply APR, "collateral: yes" and your health factor. Try `borrow 100000 usdc`: it's refused with the health factor it would cause.
 11. Type `stake 5 near with linear`. You should see a 🥩 card with the live LiNEAR rate and how much LiNEAR you'd get. `stake 3 near on astro-stakers.poolv1.near` shows the validator fee and the 2–3 day unstake note. Just `stake 10 near` makes Pip ask liquid or validator.
+12. Paste `hoot-17.nearlytrade.near`. You should see a 🔍 analysis with **Risk signals · high** and *"NOT the verified $HOOT — the real one is hoot-8ecf65.launchpad.justhoot.near"*, plus its creator wallet, wallet age, funder and tax (buy 4% · sell 4%). Then type `analyze hoot` for the real one (creator `justhoot-owner.near`, wallet age, tokens launched, creator holds ~12%).
+13. Connect a wallet and click **Portfolio**. You should see every token you hold with price and USD value, memes tagged by launchpad.
 
 **Without `NEAR_AI_API_KEY`** the app runs in *offline brain* mode: a small command parser that handles every typed command above (swap, buy/sell, bridge, pay, payment link, launch, add lp, supply/borrow/repay/withdraw, stake/unstake), so everything stays reproducible. Only the free-form questions (like the **Earn yield** pill) need the key. **With a key** (get one at https://cloud.near.ai), Pip understands free-form chat and calls the same tools.
 
@@ -160,7 +184,7 @@ Read-only smoke test of **every feature** (live mainnet quotes, builds the unsig
 npm run smoke                      # or: npm run smoke -- your-account.near
 ```
 
-Expected: `15 passed, 0 failed. Nothing was signed or sent.`
+Expected: `18 passed, 0 failed. Nothing was signed or sent.`
 
 ## Architecture
 
@@ -180,6 +204,10 @@ src/
   lib/liquidity.ts          addLiquidity on Rhea classic pools
   lib/lending.ts            supply / borrow / repay / withdraw on Rhea Lending + health factor
   lib/staking.ts            liquid & native staking, unstake, withdraw unstaked
+  lib/portfolio.ts          every held token with live USD prices (Rhea list or live pool quote)
+  lib/analyze.ts            token / wallet due-diligence report + risk signals
+  lib/history.ts            FastNEAR holdings, top holders, tx history (with retries)
+  lib/launchpads.ts         known NEAR token factories / launchpads
   lib/intents.ts            NEAR Intents 1Click client
   lib/rhea.ts               Rhea smart router + v2.ref-finance.near swap builder
   lib/dcl.ts                Rhea DCL pool index, quotes, swap builder, nearly.trade launches
@@ -243,11 +271,13 @@ All built during NEAR HACKATHON (git history, `main`):
 6. Token launches with uploaded pictures, Rhea liquidity
 7. Quick-action pills
 8. Lend & borrow on Rhea Lending, NEAR staking (liquid + validators)
+9. Portfolio with real meme prices, contract-address analysis (creator, wallet age, funder, launches, holders, risks)
 
 ## Hackathon compliance notes
 
 - **Built in the window**: all code was written during NEAR HACKATHON (after the 2026-10-19 announcement). There was no earlier code.
 - **Libraries / boilerplate (Q-005)**: `create-next-app` (Next.js 16, React 19, Tailwind 4), `@hot-labs/near-connect` (wallets), `openai` SDK (pointed at NEAR AI Cloud), `tsx` (dev, smoke test). No other runtime dependencies. Written with help from AI coding assistants (Claude Code).
+- **Data sources**: FastNEAR public APIs (holdings, top holders, transaction history), Rhea price list, NEAR RPC.
 - **References used** (formats were read, not copied): NEAR Intents 1Click OpenAPI; nearly.trade's verified contract source (`sam3dsol/Nearlytrade`); fastnear's open-source near.fm launch adapters for JustHoot; Burrow's official SDK (`burrowHQ/burrow-sdk-python`) for Rhea Lending; on-chain views of Rhea, LiNEAR, rNEAR and Meta Pool.
 - **Hosted demo (Q-012)**: https://allpilot.vercel.app, kept up through judging (at least 2026-11-18).
 - **Mainnet (Q-007)**: NEAR Intents has no testnet, so Allpilot runs on mainnet. Test with a separate dev account and tiny amounts. Quotes without a wallet are `dry: true`.

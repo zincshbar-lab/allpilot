@@ -23,6 +23,7 @@ const ICONS = {
   trend: <path d="M3 17l6-6 4 4 8-8M15 7h6v6" />,
   bank: <path d="M3 10l9-6 9 6M5 10v8m4-8v8m6-8v8m4-8v8M3 20h18" />,
   coins: <path d="M8 8a5 3 0 1 0 0 .01M3 8v4c0 1.7 2.2 3 5 3s5-1.3 5-3V8M11 14.5c.6.3 1.3.5 2 .5 2.8 0 5-1.3 5-3V8m-5 8v4c0 1.7 2.2 3 5 3s5-1.3 5-3v-4" />,
+  search: <path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14Zm9 16-4.3-4.3" />,
   stake: <path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7l8-4Zm-3 9 2 2 4-4" />,
 };
 
@@ -36,13 +37,14 @@ function Icon({ name, className = "" }: { name: keyof typeof ICONS; className?: 
 
 const MAIN: Pill[] = [
   { icon: "rocket", label: "Launch a token", featured: true, fill: "launch My Token $TICKER on nearly", select: "My Token $TICKER" },
-  { icon: "wallet", label: "Portfolio", text: "show my balances" },
+  { icon: "wallet", label: "Portfolio", text: "my portfolio" },
   { icon: "trend", label: "Earn yield", text: "where can I earn yield on NEAR and USDC? compare staking and lending rates" },
   { icon: "swap", label: "Swap", text: "swap 1 near to usdc" },
   { icon: "pay", label: "Pay a friend", fill: "pay friend.near 1 usdc", select: "friend.near" },
 ];
 
 const MORE: Pill[] = [
+  { icon: "search", label: "Analyze a token", fill: "analyze paste-contract-address.near", select: "paste-contract-address.near" },
   { icon: "stake", label: "Stake NEAR", fill: "stake 5 near with linear", select: "5" },
   { icon: "bank", label: "Lend USDC", fill: "supply 10 usdc", select: "10" },
   { icon: "coins", label: "Borrow", fill: "borrow 5 usdc", select: "5" },

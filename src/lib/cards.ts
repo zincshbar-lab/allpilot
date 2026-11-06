@@ -7,13 +7,17 @@ export type Venue = "near-intents" | "rhea" | "rhea-dcl" | "direct" | "rhea-lend
 
 export type ActionCard = {
   id: string;
-  kind: "swap" | "bridge" | "meme" | "pay" | "link" | "launch" | "lp" | "lend" | "stake" | "info";
+  kind: "swap" | "bridge" | "meme" | "pay" | "link" | "launch" | "lp" | "lend" | "stake" | "portfolio" | "analysis" | "info";
   title: string;
   venue?: Venue;
   launchpad?: "justhoot" | "nearly" | null;
   /** Token picture (data URL) for launch cards. */
   icon?: string;
   lines: { label: string; value: string }[];
+  /** Grouped lines (token analysis). */
+  sections?: CardSection[];
+  /** Token table (portfolio). */
+  rows?: { token: string; symbol: string; amount: string; price: string; value: string; badge?: string; note?: string }[];
   warnings: string[];
   /** NEAR-side transactions for the connected wallet to sign. Empty when it is a quote only. */
   transactions: PlannedTx[];
@@ -35,6 +39,8 @@ export type ActionCard = {
   links?: { label: string; href: string }[];
   expiresAt?: number;
 };
+
+export type CardSection = { title: string; lines: { label: string; value: string }[] };
 
 export type ChatMessage = { role: "user" | "assistant"; content: string };
 

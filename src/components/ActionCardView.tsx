@@ -22,6 +22,8 @@ const KIND: Record<ActionCard["kind"], { icon: string; tint: string }> = {
   lp: { icon: "💧", tint: "bg-mint-soft" },
   lend: { icon: "🏦", tint: "bg-sky-soft" },
   stake: { icon: "🥩", tint: "bg-lav-soft" },
+  portfolio: { icon: "👛", tint: "bg-mint-soft" },
+  analysis: { icon: "🔍", tint: "bg-sky-soft" },
   info: { icon: "💡", tint: "bg-pink-soft" },
 };
 
@@ -33,12 +35,15 @@ export function ActionCardView({
   policy,
   onConnect,
   signAndSend,
+  onAsk,
 }: {
   card: ActionCard;
   accountId?: string;
   policy: GuardPolicy;
   onConnect: () => void;
   signAndSend: (txs: ActionCard["transactions"]) => Promise<string[]>;
+  /** Send a follow-up message to Pip (e.g. "analyze <token>"). */
+  onAsk?: (text: string) => void;
 }) {
   const [status, setStatus] = useState<Status>("idle");
   const [hashes, setHashes] = useState<string[]>([]);
@@ -124,14 +129,38 @@ export function ActionCardView({
         )}
       </div>
 
-      <dl className="px-4 py-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+      {card.lines.length > 0 && <dl className="px-4 py-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
         {card.lines.map((l) => (
           <div key={l.label} className="contents">
             <dt className="text-ink-soft">{l.label}</dt>
             <dd className={`text-right font-medium ${["Contract", "Recipient", "Pays to", "Token"].includes(l.label) ? "font-mono text-xs break-all" : "break-words"}`}>{l.value}</dd>
           </div>
         ))}
-      </dl>
+      </dl>}
+
+      {card.rows && <PortfolioTable rows={card.rows} onAsk={onAsk} />}
+
+      {card.sections?.map((s) => (
+        <section key={s.title} className="px-4 pt-3">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-ink-soft mb-1.5">{s.title}</h4>
+          <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm pb-3 border-b-2 border-line">
+            {s.lines.map((l, i) =>
+              /^[🔴🟡🟢]$/u.test(l.label) ? (
+                <div key={i} className="col-span-2 flex gap-2 min-w-0">
+                  <span aria-hidden className="shrink-0">{l.label}</span>
+                  <span className="min-w-0 [overflow-wrap:anywhere]">{l.value}</span>
+                </div>
+              ) : (
+                <div key={i} className="contents">
+                  <dt className="text-ink-soft">{l.label}</dt>
+                  <dd className={`text-right font-medium min-w-0 ${["Contract", "Wallet", "Largest wallet", "Funded / created by"].includes(l.label) ? "font-mono text-xs break-all" : "break-words"}`}>{l.value}</dd>
+                </div>
+              ),
+            )}
+          </dl>
+        </section>
+      ))}
+      {card.sections && <div className="h-3" />}
 
       {card.warnings.length > 0 && (
         <ul className="mx-4 mb-3 rounded-2xl bg-butter-soft px-3 py-2 text-xs space-y-1">
@@ -231,6 +260,40 @@ function CheckoutSnippets({ checkout }: { checkout: NonNullable<ActionCard["chec
       <CopyRow label="Share this link — the payer picks any token on any chain" value={checkout.url} />
       <CopyRow label="Embed on a website (checkout widget)" value={checkout.iframe} />
       <CopyRow label="…or a “Pay with Intents” button" value={checkout.button} />
+    </div>
+  );
+}
+
+function PortfolioTable({ rows, onAsk }: { rows: NonNullable<ActionCard["rows"]>; onAsk?: (t: string) => void }) {
+  return (
+    <div className="px-4 pb-3">
+      <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 text-[11px] text-ink-soft uppercase tracking-wide pb-1 border-b-2 border-line">
+        <span>Token</span>
+        <span className="text-right">Price</span>
+        <span className="text-right">Value</span>
+      </div>
+      <ul className="divide-y-2 divide-line">
+        {rows.map((r) => (
+          <li key={r.token} className="grid grid-cols-[1fr_auto_auto] gap-x-3 items-center py-2 text-sm">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-semibold truncate max-w-[9rem]" title={r.token}>{r.symbol}</span>
+                {r.badge && (
+                  <span className={`text-[10px] rounded-full px-1.5 py-0.5 border border-line ${r.badge === "verified" ? "bg-mint-soft" : "bg-butter-soft"}`}>{r.badge}</span>
+                )}
+                {onAsk && r.token !== "near" && (
+                  <button className="text-[11px] text-ink-soft hover:text-ink underline" onClick={() => onAsk(`analyze ${r.token}`)} title={`Analyze ${r.token}`}>
+                    🔍
+                  </button>
+                )}
+              </div>
+              <div className="text-xs text-ink-soft truncate" title={r.amount}>{r.amount}{r.note ? ` · ${r.note}` : ""}</div>
+            </div>
+            <span className="text-right text-xs text-ink-soft">{r.price}</span>
+            <span className="text-right font-semibold">{r.value}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

@@ -9,6 +9,9 @@ import { launchToken, normalizeLaunchpad } from "./launch";
 import { addLiquidity } from "./liquidity";
 import { borrow, lendingOverview, repay, supply, withdrawSupply } from "./lending";
 import { stake, stakingOverview, unstake, withdrawUnstaked } from "./staking";
+import { analyzeToken, looksLikeAddress } from "./analyze";
+import { portfolioCard } from "./portfolio";
+import { resolveToken } from "./tokens";
 
 const SYSTEM = `You are Pip, the cheerful co-pilot inside Allpilot — a cute AI trading buddy on NEAR.
 You help the user:
@@ -20,6 +23,8 @@ You help the user:
 6. launch a brand-new memecoin on JustHoot or nearly.trade (with a token picture the user uploads),
 7. add liquidity to Rhea (Ref) classic pools,
 8. lend & borrow on Rhea Lending (formerly Burrow): supply, borrow, repay, withdraw — always with the health factor,
+10. show the user's portfolio — every token they hold, memes included, with live prices and USD value,
+11. analyze any token contract (or wallet): launchpad, creator, creator wallet age/funder/other launches, holders, price, taxes, copycats, risk signals.
 9. stake NEAR: liquid staking (LiNEAR, Rhea rNEAR, Meta Pool stNEAR — tradable, instant exit via swap) or native staking with a validator (unstake takes ~2–3 days).
 
 Rules:
@@ -39,6 +44,8 @@ Rules:
 - Liquidity: you need two tokens and the amount of the first; the second is matched to the pool ratio. Mention impermanent loss briefly.
 - Lending: supplying uses the asset as collateral by default. Before borrowing, the user needs collateral; tool errors explain health problems — relay them. Mention liquidation risk briefly when borrowing.
 - Staking: if they don't say where, ask "liquid (LiNEAR / rNEAR / stNEAR — keep a tradable token, exit instantly) or a validator (native, ~2–3 day unstake)?" Use lending_info / staking_info for rates and positions instead of guessing.
+- If the user pastes a contract address, or asks whether a token is safe/legit/a rug, call analyze_token. Summarize the risk signals in 1–2 lines; never call a token "safe" — say what the signals show.
+- For "my balances / portfolio / holdings / what do I hold", call portfolio (needs a connected wallet).
 - NEVER substitute a different token, chain, launchpad or recipient than the user asked for. If what they asked isn't possible, say so and ask what they'd like instead.
 - Not financial advice. If asked what to buy, you can show trending/verified tokens but don't recommend.`;
 
@@ -109,8 +116,24 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "portfolio",
+      description: "The connected wallet's full portfolio: every token held (memes included) with live price and USD value. Prefer this over get_balances.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "analyze_token",
+      description: "Due-diligence report on a token contract address or symbol (or a wallet): launchpad, creator, creator wallet age & funder & number of tokens launched, holder concentration, price/market cap, taxes, copycats, risk signals.",
+      parameters: { type: "object", properties: { token: { type: "string", description: "Contract address (e.g. idog.nearlytrade.near) or symbol" } }, required: ["token"] },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "get_balances",
-      description: "Show the connected user's balances.",
+      description: "Quick balances for a few major tokens (use portfolio for the full picture).",
       parameters: { type: "object", properties: { symbols: { type: "array", items: { type: "string" } } } },
     },
   },
@@ -334,6 +357,24 @@ async function runTool(name: string, args: Record<string, unknown>, ctx: Ctx): P
       ctx.cards.push(c);
       return cardSummary(c);
     }
+    case "portfolio": {
+      if (!ctx.accountId) return { error: "Wallet not connected — ask them to connect to see their portfolio." };
+      const c = await portfolioCard(ctx.accountId);
+      ctx.cards.push(c);
+      return { title: c.title, top: c.rows?.slice(0, 8).map((r) => `${r.symbol}: ${r.amount} = ${r.value}`), warnings: c.warnings };
+    }
+    case "analyze_token": {
+      const q = String(args.token ?? "");
+      let id = looksLikeAddress(q);
+      if (!id) {
+        const r = await resolveToken(q);
+        if (!r.best || r.best.id === "near") return { error: `I couldn't find a token "${q}". Paste its contract address.` };
+        id = r.best.id;
+      }
+      const c = await analyzeToken(id);
+      ctx.cards.push(c);
+      return { title: c.title, sections: c.sections?.map((s) => ({ [s.title]: s.lines.map((l) => `${l.label}: ${l.value}`) })) };
+    }
     case "lending": {
       const a = String(args.action);
       const base = { token: String(args.token), amount: args.amount ? String(args.amount) : undefined, all: args.all === true, accountId: ctx.accountId };
@@ -431,6 +472,24 @@ export async function offline(messages: ChatMessage[], ctx: Ctx, opts?: { trades
   try {
     let m: RegExpMatchArray | null;
     const rawText = messages.at(-1)?.content ?? "";
+    // a bare contract address (or a NearBlocks / launchpad link) → analyze it
+    const addr = looksLikeAddress(rawText);
+    if (addr) {
+      await runTool("analyze_token", { token: addr }, ctx);
+      const isWallet = ctx.cards.at(-1)?.title.startsWith("Wallet");
+      return reply(isWallet ? "That's a wallet, not a token — here's its on-chain profile 🔍" : "Here's what the chain says about it 🔍 Check the risk signals before you ape.");
+    }
+    // analyze / check / scan / is X safe
+    if ((m = text.match(/^(?:analy[sz]e|check|scan|research|dd|inspect)\s+\$?([a-z0-9._-]+)\s*\??$/) ?? text.match(/^is\s+\$?([a-z0-9._-]+)\s+(?:safe|legit|a rug|a scam)\s*\??$/))) {
+      await runTool("analyze_token", { token: m[1] }, ctx);
+      return reply("Analysis ready 🔍 These are signals, not a verdict.");
+    }
+    // portfolio / balances / holdings
+    if (/^(?:show\s+)?(?:my\s+)?(?:portfolio|balances?|holdings|wallet)\s*\??$|what do i (?:hold|have)/.test(text)) {
+      if (!ctx.accountId) return reply("Connect your wallet first (top-right) and I'll show your whole portfolio 👛");
+      await runTool("portfolio", {}, ctx);
+      return reply("Your portfolio 👛 Memes are priced live from their pools. Tap 🔍 on any token to analyze it.");
+    }
     // launch Pip Coin $PIP on hoot [with first buy 0.5 near]   (case kept from the raw message)
     if ((m = rawText.match(/(?:launch|create|deploy)\s+(?:a\s+|my\s+)?(?:new\s+)?(?:token|coin|meme(?:coin)?)?\s*(?:called|named)?\s*"?([A-Za-z0-9 ]{1,32}?)"?\s+\(?\$([A-Za-z0-9]{1,12})\)?\s+on\s+(just\s?hoot|hoot|nearly(?:\.trade)?)(?:.*?first\s+buy\s+(?:of\s+)?(\d+(?:\.\d+)?))?/i))) {
       const [, name, symbol, pad, firstBuy] = m;
@@ -531,7 +590,7 @@ export async function offline(messages: ChatMessage[], ctx: Ctx, opts?: { trades
       return reply(b.map((x) => `${x.symbol}: ${x.amount}`).join(" · ") || "No balances found.");
     }
     return reply(
-      `I'm in offline mode (no NEAR AI key set), so I understand simple commands:\n• swap 1 near to usdc\n• swap 5 usdc to near on ref\n• buy 0.2 near of hoot\n• sell 1000 nearly\n• bridge 5 usdc from near to base 0xYourAddress\n• pay alice.near 5 usdc (add "with near" to pay in NEAR)\n• payment link 10 usdc for order 42\n• launch Pip Coin $PIP on hoot (tap 📎 to add a picture)\n• add lp 1 near and usdc\n• supply 10 usdc · borrow 5 usdc · repay all usdc\n• stake 5 near with linear · unstake all linear\n• trending memes · balance`,
+      `I'm in offline mode (no NEAR AI key set), so I understand simple commands:\n• swap 1 near to usdc\n• swap 5 usdc to near on ref\n• buy 0.2 near of hoot\n• sell 1000 nearly\n• bridge 5 usdc from near to base 0xYourAddress\n• pay alice.near 5 usdc (add "with near" to pay in NEAR)\n• payment link 10 usdc for order 42\n• launch Pip Coin $PIP on hoot (tap 📎 to add a picture)\n• add lp 1 near and usdc\n• supply 10 usdc · borrow 5 usdc · repay all usdc\n• stake 5 near with linear · unstake all linear\n• my portfolio · paste any token address to analyze it\n• trending memes · balance`,
     );
   } catch (e) {
     if (opts?.tradesOnly) return null; // let the LLM explain or recover
