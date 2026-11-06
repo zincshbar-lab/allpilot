@@ -10,13 +10,25 @@ import { useWallet } from "./useWallet";
 
 type Msg = { role: "user" | "assistant"; content: string; cards?: ActionCard[] };
 
-const SUGGESTIONS = [
+// `text` sends straight away; `fill` drops an editable template into the box (for things that need a recipient).
+type Suggestion = { label: string; text?: string; fill?: string; select?: string };
+const SUGGESTIONS: Suggestion[] = [
   { label: "🔄 Swap 1 NEAR → USDC", text: "swap 1 near to usdc" },
-  { label: "🌊 Swap on Ref", text: "swap 1 near to usdc on ref" },
+  { label: "💌 Pay a friend", fill: "pay friend.near 1 usdc", select: "friend.near" },
+  { label: "🔗 Payment link", text: "payment link 5 usdc for coffee" },
   { label: "🦉 Buy HOOT", text: "buy 0.1 near of hoot" },
   { label: "✨ Buy NEARLY", text: "buy 0.1 near of nearly" },
   { label: "🌈 Bridge USDC → Base", text: "bridge 5 usdc from near to base" },
+  { label: "🌊 Swap on Ref", text: "swap 1 near to usdc on ref" },
   { label: "🔥 Trending memes", text: "trending memes" },
+];
+
+const SKILLS: { icon: string; title: string; desc: string; s: Suggestion }[] = [
+  { icon: "🔄", title: "Swap", desc: "Best price on NEAR Intents (near.com engine) or Rhea/Ref", s: { label: "", text: "swap 1 near to usdc" } },
+  { icon: "🌈", title: "Bridge", desc: "Move tokens between NEAR, Ethereum, Base, Solana, BTC and 20+ chains", s: { label: "", fill: "bridge 5 usdc from near to base 0xYourAddress", select: "0xYourAddress" } },
+  { icon: "🐸", title: "Memecoins", desc: "Buy & sell on JustHoot, nearly.trade and Ref, with copycat checks", s: { label: "", text: "buy 0.1 near of hoot" } },
+  { icon: "💌", title: "Pay anyone", desc: "They get the exact amount on any chain; you pay with any token", s: { label: "", fill: "pay friend.near 1 usdc with near", select: "friend.near" } },
+  { icon: "🔗", title: "Payment links", desc: "A checkout link + website widget. Customers pay from any wallet or chain", s: { label: "", text: "payment link 10 usdc for order 42" } },
 ];
 
 type Trending = {
@@ -30,7 +42,7 @@ export default function App() {
     {
       role: "assistant",
       content:
-        "Hi, I'm Pip! 🦉✨ Tell me what you want to do in plain words. I can swap on NEAR Intents (like near.com), bridge to other chains, and buy memecoins on JustHoot, nearly.trade and Ref. I only suggest — your wallet signs.",
+        "Hi, I'm Pip! 🦉✨ Tell me what you want to do in plain words. I can swap on NEAR Intents (like near.com), bridge to other chains, buy memecoins on JustHoot, nearly.trade and Ref, pay anyone on any chain, and make payment links so others can pay you with any token. I only suggest — your wallet signs.",
     },
   ]);
   const [input, setInput] = useState("");
@@ -40,6 +52,21 @@ export default function App() {
   const [showGuard, setShowGuard] = useState(false);
   const [trending, setTrending] = useState<Trending>();
   const endRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function applySuggestion(s: Suggestion) {
+    if (s.text) return send(s.text);
+    if (!s.fill) return;
+    setInput(s.fill);
+    // focus the box and highlight the part to replace (e.g. the recipient)
+    requestAnimationFrame(() => {
+      const el = inputRef.current;
+      if (!el) return;
+      el.focus();
+      const i = s.select ? s.fill!.indexOf(s.select) : -1;
+      if (i >= 0) el.setSelectionRange(i, i + s.select!.length);
+    });
+  }
 
   useEffect(() => {
     // braces matter: newer browsers return a Promise from scrollIntoView
@@ -153,7 +180,7 @@ export default function App() {
           <div className="border-t-2 border-line p-3 sm:p-4">
             <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
               {SUGGESTIONS.map((s) => (
-                <button key={s.text} className="btn shrink-0 bg-surface-2 border-2 border-line px-3 py-1.5 text-xs" onClick={() => send(s.text)} disabled={busy}>
+                <button key={s.label} className="btn shrink-0 bg-surface-2 border-2 border-line px-3 py-1.5 text-xs" onClick={() => applySuggestion(s)} disabled={busy}>
                   {s.label}
                 </button>
               ))}
@@ -166,9 +193,10 @@ export default function App() {
               }}
             >
               <input
+                ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder='Try "buy 0.2 near of hoot" or "bridge 10 usdc to solana"'
+                placeholder='Try "buy 0.2 near of hoot" or "pay alice.near 5 usdc"'
                 className="flex-1 min-w-0 rounded-full border-2 border-line bg-surface-2 px-4 py-3 outline-none focus:border-lav"
                 aria-label="Message Pip"
               />
@@ -184,6 +212,19 @@ export default function App() {
 
         {/* side panel */}
         <aside className="space-y-4 min-w-0">
+          <section className="card p-4">
+            <h2 className="font-semibold mb-2">✨ What Pip can do</h2>
+            <ul className="space-y-1">
+              {SKILLS.map((k) => (
+                <li key={k.title}>
+                  <button className="w-full text-left rounded-2xl px-2 py-1.5 hover:bg-surface-2 transition-colors disabled:opacity-50" onClick={() => applySuggestion(k.s)} disabled={busy}>
+                    <span className="text-sm font-semibold">{k.icon} {k.title}</span>
+                    <span className="block text-xs text-ink-soft">{k.desc}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
           <section className="card p-4">
             <h2 className="font-semibold mb-2">🐸 Meme garden</h2>
             {!trending && <p className="text-sm text-ink-soft">Picking fresh memes…</p>}
