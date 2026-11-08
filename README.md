@@ -18,7 +18,7 @@ You chat with **Pip**, a little robot pilot in an aviator cap, in plain words. P
 | `swap 2 usdc to near on ref` | Best route from the Rhea smart router; one `ft_transfer_call` to `v2.ref-finance.near` | Rhea / Ref |
 | `bridge 5 usdc from near to base 0xYourAddr` | Cross-chain quote; sign one tx on NEAR, funds arrive on Base | NEAR Intents |
 | `bridge 0.01 eth from ethereum to near refund 0xYourAddr` | You get a deposit address to send ETH to from your EVM wallet; Allpilot tracks the status | NEAR Intents |
-| `buy 0.1 near of hoot` | Finds the verified HOOT contract, quotes its Rhea DCL pool, wraps and swaps in one tx | JustHoot → Rhea DCL |
+| `buy 0.1 near of hoot` | Finds the verified HOOT contract, quotes **only its official JustHoot launch pool**, wraps and swaps in one tx | JustHoot → Rhea DCL |
 | `buy 0.1 near of nearly` | Same for nearly.trade tokens (direct or 2-hop pools) | nearly.trade → Rhea DCL |
 | `sell 100 hoot` | Sells back to native NEAR | Rhea DCL |
 | `trending memes` | Verified memes + freshest nearly.trade launches (read on-chain from `nearlytrade.near`) | — |
@@ -149,6 +149,18 @@ The LLM never builds transactions itself. It calls these server-side tools (`src
 
 The system prompt makes Pip ask instead of guessing (launchpad, staking type, recipient), never substitute a different token, chain or recipient than the one asked for, and never give financial advice.
 
+### ✅ Official launch pools only (no fake LPs)
+
+Anyone can open extra pools for a meme with thin or skewed liquidity. On Rhea DCL, NEARLY has 160+ pools and HOOT 24. So **every buy and sell of a JustHoot or nearly.trade token is locked to the pool its launchpad created at launch**, read on-chain:
+
+| Launchpad | Where the official pool comes from |
+| --- | --- |
+| JustHoot v1 | the token's `get_config()` → `dcl_pool_id` / `dcl_quote_token_id` (and `platform_id` must be `launchpad.justhoot.near`) |
+| JustHoot v2 | `v2-pool-creator.justhoot.near.get_launch_state({token_id})` → `launch.plan.pool_id`, confirmed by `v2-launchpad.justhoot.near.is_launched_token` |
+| nearly.trade | `nearlytrade.near` launch record → `pool_id` + `quote` |
+
+The pool must also exist on Rhea DCL and contain the token. If a meme launched against another asset (e.g. OYSTER/PRL, IDOG/AINEAR), the route is *official meme pool + the best pool between that asset and NEAR*. If the official pool can't be verified, Allpilot **refuses** to trade the token rather than fall back to some other pool. Meme cards show `Pool: ✅ official … launch pool` with the pool id, and the token analyzer lists the official pool and how many other pools it ignores. Portfolio and PnL prices use the official pool too.
+
 ### 🛡️ Pilot Guard (agent safety)
 
 The AI only proposes. Before any wallet prompt, the browser checks every proposed transaction against rules the user controls, which the model can't change:
@@ -177,7 +189,7 @@ npm run dev
 Open http://localhost:3000, then:
 
 0. The page shows the logo, your wallet button and a **☰** button; everything else (Pilot Guard settings, "What Pip can do", Meme garden, how it works) lives in the ☰ menu, which opens and closes on click (or Esc). Under Pip's welcome message you'll see quick-action pills (**Launch a token**, **Portfolio**, **Earn yield**, **Swap**, **Pay a friend**, **More**). Click **More** to reveal the rest.
-1. Click **More → Buy HOOT**. You should see a card with the verified contract `hoot-8ecf65.launchpad.justhoot.near`, a live Rhea DCL quote, and a warning about lookalike tokens.
+1. Click **More → Buy HOOT**. You should see a card with the verified contract `hoot-8ecf65.launchpad.justhoot.near`, a live quote, **`Pool: ✅ official JustHoot launch pool`** with pool id `hoot-8ecf65.launchpad.justhoot.near|wrap.near|10000` (HOOT has 24 pools; only this one is used), and a warning about lookalike tokens.
 2. Click the **Swap** pill (sends `swap 1 near to usdc`). You should see a NEAR Intents quote (est. output, minimum, ~time).
 3. Type `bridge 5 usdc from near to base 0x2527D02599Ba641c19FEa793cD0F167589a0f10D`. You should see a bridge card with the recipient filled in.
 4. Click **Connect wallet**, then repeat any request. The card now has **Sign with wallet (n tx)** and a green **Pilot Guard** line.
@@ -227,7 +239,7 @@ src/
   lib/launchpads.ts         known NEAR token factories / launchpads
   lib/intents.ts            NEAR Intents 1Click client
   lib/rhea.ts               Rhea smart router + v2.ref-finance.near swap builder
-  lib/dcl.ts                Rhea DCL pool index, quotes, swap builder, nearly.trade launches
+  lib/dcl.ts                Rhea DCL pool index, official launch-pool registry, quotes, swap builder, nearly.trade launches
   lib/tokens.ts             symbol → contract resolver, verified list, copycat ranking
   lib/near.ts               read-only RPC (with fallback + timeouts), unit helpers
   lib/tx.ts                 transaction/action builders shared by server and client
@@ -293,6 +305,7 @@ All built during NEAR HACKATHON (git history, `main`):
 8. Lend & borrow on Rhea Lending, NEAR staking (liquid + validators)
 9. Portfolio with real meme prices, contract-address analysis (creator, wallet age, funder, launches, holders, risks)
 10. PnL on buys and sells; new robot-pilot logo
+11. Simpler page (☰ menu); meme trades locked to each token's official launch pool
 
 ## Hackathon compliance notes
 

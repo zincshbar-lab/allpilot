@@ -1,7 +1,7 @@
 // High-level actions the AI can call. Each returns an ActionCard (a proposal) — never signs.
 
 import type { ActionCard, Venue } from "./cards";
-import { latestNearlyLaunches, planDclSwap } from "./dcl";
+import { NoOfficialPoolError, latestNearlyLaunches, officialPool, planDclSwap } from "./dcl";
 import { findIntentsToken, intentsQuote, intentsTokens, normalizeChain, type IntentsToken } from "./intents";
 import { WRAP_NEAR, fromBase, ftBalance, getNativeBalance, isNearAccountId, storageNeeded, toBase } from "./near";
 import { planRheaSwap } from "./rhea";
@@ -330,12 +330,16 @@ export async function memeTrade(opts: {
   const amountIn = toBase(opts.amount, decIn);
 
   const [dcl, rhea] = await Promise.all([
-    planDclSwap({ tokenIn, tokenOut, amountIn, slippageBps: slippage, accountId: opts.accountId }).catch(() => null),
+    planDclSwap({ tokenIn, tokenOut, amountIn, slippageBps: slippage, accountId: opts.accountId }).catch((e) => {
+      if (e instanceof NoOfficialPoolError) throw e; // never fall back to unofficial pools for launchpad memes
+      return null;
+    }),
     t.launchpad ? Promise.resolve(null) : planRheaSwap({ tokenIn, tokenOut, amountIn, slippageBps: slippage, accountId: opts.accountId }).catch(() => null),
   ]);
   const useDcl = dcl && (!rhea || BigInt(dcl.amountOut) >= BigInt(rhea.amountOut));
   const plan = useDcl ? dcl : rhea;
-  if (!plan) throw new Error(`No pool found to ${side} ${t.symbol} (${t.id}).`);
+  if (!plan) throw new Error(t.launchpad ? `${t.symbol}'s official launch pool has no liquidity to ${side} into right now.` : `No pool found to ${side} ${t.symbol} (${t.id}).`);
+  const off = t.launchpad ? await officialPool(t.id) : null;
 
   const where = t.launchpad ? LAUNCHPAD_NAME[t.launchpad] : "Rhea";
   const symIn = side === "buy" ? "NEAR" : t.symbol;
@@ -356,7 +360,10 @@ export async function memeTrade(opts: {
       { label: "You pay", value: `${opts.amount} ${symIn}` },
       { label: "You get (est.)", value: `${fromBase(plan.amountOut, decOut)} ${symOut}` },
       { label: "Minimum", value: `${fromBase(plan.minAmountOut, decOut)} ${symOut}` },
-      { label: "Pool", value: useDcl ? `Rhea DCL · ${(dcl!.poolIds.length)} hop(s)` : "Rhea smart router" },
+      off
+        ? { label: "Pool", value: `✅ official ${where} launch pool${dcl!.poolIds.length > 1 ? ` + ${off.quote === "wrap.near" ? "" : "best "}${off.quote.split(".")[0].toUpperCase()}↔NEAR hop` : ""}` }
+        : { label: "Pool", value: useDcl ? `Rhea DCL · ${dcl!.poolIds.length} hop(s)` : "Rhea smart router" },
+      ...(off ? [{ label: "Pool id", value: off.poolId }] : []),
       { label: "Slippage", value: `${slippage / 100}%` },
     ],
     warnings: [...lookalikeWarning(t.symbol, r.lookalikes, t), ...impactWarning(usdIn, usdOut)],

@@ -3,7 +3,7 @@
 // live price & market cap, taxes, lookalikes, and plain-language risk signals. Read-only.
 
 import type { ActionCard, CardSection } from "./cards";
-import { dclPoolDetail, dclPools } from "./dcl";
+import { allNearlyLaunches, dclPoolDetail, dclPools, officialPool } from "./dcl";
 import { accountTxs, ago, firstTx, topHolders, txDetails } from "./history";
 import { launchpadOfToken, parentOf } from "./launchpads";
 import { WRAP_NEAR, accountExists, fromBase, ftBalance, ftMetadata, getNativeBalance, isNearAccountId, view } from "./near";
@@ -19,22 +19,6 @@ const INFRA = /^(dclv2\.ref-labs\.near|v2\.ref-finance\.near|intents\.near|contr
 const pctStr = (n: number) => (n >= 10 ? n.toFixed(0) : n >= 1 ? n.toFixed(1) : n.toFixed(2)) + "%";
 const usd = (n?: number) => (n === undefined ? "—" : n >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `$${(n / 1e3).toFixed(1)}K` : `$${n.toFixed(2)}`);
 const dateStr = (ms: number) => (ms ? new Date(ms).toISOString().slice(0, 10) : "unknown");
-
-type NearlyLaunchFull = { id: number; token: string; creator: string; created_at_ms: number; dev_buy_near?: string; quote?: string };
-let nearlyCache: { at: number; list: NearlyLaunchFull[] } | null = null;
-async function allNearlyLaunches(): Promise<NearlyLaunchFull[]> {
-  if (nearlyCache && Date.now() - nearlyCache.at < 10 * 60_000) return nearlyCache.list;
-  const n = Number(await view<number>("nearlytrade.near", "get_num_launches"));
-  const pages = await Promise.all(
-    Array.from({ length: Math.ceil(n / 200) }, (_, i) =>
-      view<NearlyLaunchFull[]>("nearlytrade.near", "get_launches", { from_index: i * 200, limit: 200 })
-        .then((l) => l.map((x) => ({ id: x.id, token: x.token, creator: x.creator, created_at_ms: x.created_at_ms, dev_buy_near: x.dev_buy_near, quote: x.quote })))
-        .catch(() => []),
-    ),
-  );
-  nearlyCache = { at: Date.now(), list: pages.flat() };
-  return nearlyCache.list;
-}
 
 /** How many tokens this wallet launched, from its recent signed transactions (all launchpads). */
 async function launchesBy(creator: string): Promise<{ count: number; scanned: number; factories: Record<string, number> }> {
@@ -71,7 +55,10 @@ async function walletProfile(accountId: string) {
 
 async function wnearPoolVolume(tokenId: string): Promise<bigint> {
   const pools = await dclPools().catch(() => []);
-  const pool = pools.find((p) => (p.token_x === tokenId && p.token_y === WRAP_NEAR) || (p.token_y === tokenId && p.token_x === WRAP_NEAR));
+  const off = await officialPool(tokenId).catch(() => null);
+  const pool = off
+    ? pools.find((p) => p.pool_id === off.poolId && (p.token_x === WRAP_NEAR || p.token_y === WRAP_NEAR))
+    : pools.find((p) => (p.token_x === tokenId && p.token_y === WRAP_NEAR) || (p.token_y === tokenId && p.token_x === WRAP_NEAR));
   if (!pool) return 0n;
   const d = await dclPoolDetail(pool.pool_id);
   return d ? BigInt(pool.token_x === WRAP_NEAR ? d.volume_x_in : d.volume_y_in) : 0n;
@@ -145,6 +132,13 @@ export async function analyzeToken(input: string): Promise<ActionCard> {
     { label: "Tradable in Allpilot", value: lp?.native ? "yes — native (Rhea DCL pool)" : price.price !== undefined ? "yes — via Rhea" : "no market found" },
     ...(devBuy ? [{ label: "Creator's first buy", value: devBuy }] : []),
   ];
+  if (lp?.native) {
+    const [off, all] = await Promise.all([officialPool(id).catch(() => null), dclPools().catch(() => [])]);
+    const others = all.filter((p) => (p.token_x === id || p.token_y === id) && p.pool_id !== off?.poolId).length;
+    lpLines.push({ label: "Official pool", value: off ? `${off.poolId} ✅` : "couldn't verify ⚠️" });
+    if (others) lpLines.push({ label: "Other pools", value: `${others} (Allpilot never trades through them)` });
+    if (!off) flags.push({ level: "risk", text: "Its official launch pool couldn't be verified on-chain — Allpilot won't trade it." });
+  }
   sections.push({ title: "🚀 Launchpad", lines: lpLines });
   if (!lp && parentOf(id)) flags.push({ level: "warn", text: `Launched from ${parentOf(id)}, a factory Allpilot doesn't know yet — check it yourself.` });
   else if (lp && !lp.native) flags.push({ level: "ok", text: `From ${lp.name} (recognised; not a native Allpilot launchpad).` });

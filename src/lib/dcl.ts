@@ -2,7 +2,7 @@
 // JustHoot (*.justhoot.near) and nearly.trade (*.nearlytrade.near) launch every meme token
 // as one-sided liquidity in a DCL pool, so buying a meme = swapping wNEAR through DCL pools.
 
-import { RHEA_DCL, WRAP_NEAR, view } from "./near";
+import { NEARLY_LAUNCHPAD as NEARLY_FACTORY, RHEA_DCL, WRAP_NEAR, view } from "./near";
 import { PlannedTx, appendTx, ftTransferCall, prepTxs } from "./tx";
 
 export type DclPool = { pool_id: string; token_x: string; token_y: string; fee: number };
@@ -52,10 +52,96 @@ async function dclQuote(poolIds: string[], inputToken: string, outputToken: stri
 }
 
 /** Candidate routes from tokenIn to tokenOut: direct pools, or two hops via a shared middle token. */
+// ---------------------------------------------------------------- official launch pools
+// Anyone can open extra pools for a meme (NEARLY has 160+, HOOT 24) with thin or skewed liquidity.
+// Meme trades are locked to the pool the token's own launchpad created at launch, read on-chain:
+//  • JustHoot v1   — token.get_config().dcl_pool_id / dcl_quote_token_id
+//  • JustHoot v2   — v2-pool-creator.justhoot.near.get_launch_state({token_id}).launch.plan.pool_id
+//                    (+ v2-launchpad.justhoot.near.is_launched_token to confirm it's a real launch)
+//  • nearly.trade  — nearlytrade.near launch record: pool_id + quote
+
+export type OfficialPool = { poolId: string; quote: string; launchpad: "justhoot" | "nearly"; source: string };
+
+export type NearlyLaunchFull = { id: number; token: string; creator: string; created_at_ms: number; dev_buy_near?: string; quote: string; pool_id: string };
+let nearlyCache: { at: number; list: NearlyLaunchFull[] } | null = null;
+
+export async function allNearlyLaunches(force = false): Promise<NearlyLaunchFull[]> {
+  if (!force && nearlyCache && Date.now() - nearlyCache.at < 10 * 60_000) return nearlyCache.list;
+  const n = Number(await view<number>(NEARLY_FACTORY, "get_num_launches"));
+  const pages = await Promise.all(
+    Array.from({ length: Math.ceil(n / 200) }, (_, i) =>
+      view<NearlyLaunchFull[]>(NEARLY_FACTORY, "get_launches", { from_index: i * 200, limit: 200 })
+        .then((l) => l.map((x) => ({ id: x.id, token: x.token, creator: x.creator, created_at_ms: x.created_at_ms, dev_buy_near: x.dev_buy_near, quote: x.quote, pool_id: x.pool_id })))
+        .catch(() => []),
+    ),
+  );
+  nearlyCache = { at: Date.now(), list: pages.flat() };
+  return nearlyCache.list;
+}
+
+const officialCache = new Map<string, OfficialPool | null>();
+
+export async function officialPool(tokenId: string): Promise<OfficialPool | null> {
+  if (officialCache.has(tokenId)) return officialCache.get(tokenId)!;
+  let found: OfficialPool | null = null;
+  if (tokenId.endsWith(".v2-launchpad.justhoot.near")) {
+    const [real, st] = await Promise.all([
+      view<boolean>("v2-launchpad.justhoot.near", "is_launched_token", { token_id: tokenId }).catch(() => false),
+      view<{ launch?: { quote_token_id: string; plan?: { pool_id: string } } } | null>("v2-pool-creator.justhoot.near", "get_launch_state", { token_id: tokenId }).catch(() => null),
+    ]);
+    if (real && st?.launch?.plan?.pool_id) found = { poolId: st.launch.plan.pool_id, quote: st.launch.quote_token_id, launchpad: "justhoot", source: "JustHoot v2 pool creator" };
+  } else if (tokenId.endsWith(".launchpad.justhoot.near")) {
+    const cfg = await view<{ dcl_pool_id?: string; dcl_quote_token_id?: string; platform_id?: string }>(tokenId, "get_config").catch(() => null);
+    if (cfg?.dcl_pool_id && cfg.dcl_quote_token_id && cfg.platform_id === "launchpad.justhoot.near")
+      found = { poolId: cfg.dcl_pool_id, quote: cfg.dcl_quote_token_id, launchpad: "justhoot", source: "JustHoot v1 token config" };
+  } else if (tokenId.endsWith(`.${NEARLY_FACTORY}`)) {
+    let l = (await allNearlyLaunches().catch(() => [])).find((x) => x.token === tokenId);
+    if (!l) l = (await allNearlyLaunches(true).catch(() => [])).find((x) => x.token === tokenId); // brand-new launch
+    if (l?.pool_id) found = { poolId: l.pool_id, quote: l.quote, launchpad: "nearly", source: "nearly.trade launch record" };
+  }
+  // the pool must actually exist on Rhea DCL and contain the token
+  if (found) {
+    const d = await dclPoolDetail(found.poolId);
+    if (!d || (d.token_x !== tokenId && d.token_y !== tokenId)) found = null;
+  }
+  officialCache.set(tokenId, found);
+  return found;
+}
+
 const FEES = [10000, 2000, 400, 100];
 const poolIdFor = (a: string, b: string, fee: number) => (a < b ? `${a}|${b}|${fee}` : `${b}|${a}|${fee}`);
 
+/** Pools between two non-meme tokens (e.g. PRL ↔ wNEAR), best liquidity first — used for the quote-asset hop. */
+async function poolsBetween(a: string, b: string): Promise<string[]> {
+  if (!poolCache) {
+    const direct = (await Promise.all(FEES.map(async (f) => ((await dclPoolDetail(poolIdFor(a, b, f))) ? poolIdFor(a, b, f) : null)))).filter(Boolean) as string[];
+    if (direct.length) return direct;
+  }
+  return (await dclPools()).filter((p) => (p.token_x === a && p.token_y === b) || (p.token_x === b && p.token_y === a)).map((p) => p.pool_id);
+}
+
+export class NoOfficialPoolError extends Error {}
+
 async function candidateRoutes(tokenIn: string, tokenOut: string): Promise<string[][]> {
+  const memeIn = launchpadOf(tokenIn) ? tokenIn : null;
+  const memeOut = launchpadOf(tokenOut) ? tokenOut : null;
+  if (memeIn || memeOut) {
+    const [offIn, offOut] = await Promise.all([memeIn ? officialPool(memeIn) : null, memeOut ? officialPool(memeOut) : null]);
+    if (memeIn && !offIn) throw new NoOfficialPoolError(`Couldn't verify ${memeIn}'s official launch pool, so I won't trade it through other pools.`);
+    if (memeOut && !offOut) throw new NoOfficialPoolError(`Couldn't verify ${memeOut}'s official launch pool, so I won't trade it through other pools.`);
+    // meme → meme: only when both launched against the same quote asset
+    if (offIn && offOut) return offIn.quote === offOut.quote ? [[offIn.poolId, offOut.poolId]] : [];
+    const off = (offIn ?? offOut)!;
+    const other = memeIn ? tokenOut : tokenIn;
+    if (off.quote === other) return [[off.poolId]];
+    // meme launched against e.g. PRL/USDC: official meme hop + best pool between the quote asset and the other side
+    const hop = await poolsBetween(off.quote, other);
+    return hop.slice(0, 8).map((h) => (memeIn ? [off.poolId, h] : [h, off.poolId]));
+  }
+  return anyRoutes(tokenIn, tokenOut);
+}
+
+async function anyRoutes(tokenIn: string, tokenOut: string): Promise<string[][]> {
   // Fast path: launchpad tokens almost always have a direct pool, so probe likely ids before
   // loading the full ~6.5k pool index.
   if (!poolCache) {
