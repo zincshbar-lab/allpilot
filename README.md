@@ -176,12 +176,12 @@ npm run dev
 
 Open http://localhost:3000, then:
 
-0. Under Pip's welcome message you'll see quick-action pills (**Launch a token**, **Portfolio**, **Earn yield**, **Swap**, **Pay a friend**, **More**). Click **More** to reveal the rest.
+0. The page shows the logo, your wallet button and a **☰** button; everything else (Pilot Guard settings, "What Pip can do", Meme garden, how it works) lives in the ☰ menu, which opens and closes on click (or Esc). Under Pip's welcome message you'll see quick-action pills (**Launch a token**, **Portfolio**, **Earn yield**, **Swap**, **Pay a friend**, **More**). Click **More** to reveal the rest.
 1. Click **More → Buy HOOT**. You should see a card with the verified contract `hoot-8ecf65.launchpad.justhoot.near`, a live Rhea DCL quote, and a warning about lookalike tokens.
 2. Click the **Swap** pill (sends `swap 1 near to usdc`). You should see a NEAR Intents quote (est. output, minimum, ~time).
 3. Type `bridge 5 usdc from near to base 0x2527D02599Ba641c19FEa793cD0F167589a0f10D`. You should see a bridge card with the recipient filled in.
 4. Click **Connect wallet**, then repeat any request. The card now has **Sign with wallet (n tx)** and a green **Pilot Guard** line.
-5. Open **🛡️ Guard**, set *Max NEAR per action* to `0.05`, and ask for `buy 0.1 near of hoot`. The Guard turns red and blocks signing.
+5. Open the **☰ menu** (top-right) → **Pilot Guard**, set *Max NEAR per action* to `0.05`, close the menu (☰ again), and ask for `buy 0.1 near of hoot`. The Guard turns red and blocks signing.
 6. Type `payment link 10 usdc to intents.near for Order 42`. You should see a link card with **Copy** buttons for the URL, an iframe widget and a button.
 7. Click **Open checkout ↗** on that card. Pick **Chain: Base** and **Token: ETH**, paste any Base address as the refund address, and click **Get quote in ETH**. You should see the exact ETH to send and a deposit address, while the receiver still gets exactly 10 USDC on NEAR.
 8. Tap **📎**, pick any picture, then type `launch Pip Coin $PIP on nearly`. You should see a 🚀 launch card with your picture, cost (~0.09 NEAR) and a permanent-launch warning. Try `launch Pip Coin $P on hoot` and see the ticker rule rejected.
@@ -235,7 +235,7 @@ src/
   lib/guard.ts              Pilot Guard (runs in the browser before every wallet prompt)
   lib/image.ts              in-browser image → small on-chain token picture
   lib/wallet-manifest.json  bundled NEAR Connect wallet list (fallback)
-  components/App.tsx        chat UI, 📎 upload, Guard settings, side panels
+  components/App.tsx        chat UI, 📎 upload, header (logo · wallet · ☰), ☰ menu with Guard settings, skills, meme garden
   components/QuickActions   welcome-message pills (+ More/Less)
   components/ActionCardView card UI, signing, Intents status tracking, checkout snippets
   components/Checkout.tsx   payment-link checkout

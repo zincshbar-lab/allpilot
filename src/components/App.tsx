@@ -58,7 +58,13 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState<"near-ai" | "offline">();
   const policy = useSyncExternalStore(subscribePolicy, getPolicy, getServerPolicy);
-  const [showGuard, setShowGuard] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenuOpen(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [menuOpen]);
   const [trending, setTrending] = useState<Trending>();
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -128,48 +134,40 @@ export default function App() {
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-4 sm:py-6 flex-1 flex flex-col">
       {/* header */}
-      <header className="flex items-center gap-3 flex-wrap">
+      <header className="flex items-center gap-2 sm:gap-3">
         <Pip size={46} className="bob shrink-0" />
-        <div className="mr-auto">
+        <div className="mr-auto min-w-0">
           <h1 className="text-2xl font-bold leading-none tracking-tight">
             All<span className="text-pink">pilot</span>
           </h1>
-          <p className="text-xs text-ink-soft mt-1">your cute AI co-pilot for NEAR</p>
+          <p className="hidden sm:block text-xs text-ink-soft mt-1">your cute AI co-pilot for NEAR</p>
         </div>
-        <button className="btn bg-surface border-2 border-line px-3 py-2 text-sm" onClick={() => setShowGuard((s) => !s)} aria-expanded={showGuard}>
-          🛡️ Guard · {policy.maxNearPerAction} NEAR
-        </button>
         {wallet.accountId ? (
-          <button className="btn bg-lav-soft border-2 border-line px-3 py-2 text-sm max-w-[220px] truncate" onClick={wallet.disconnect} title="Disconnect">
+          <button className="btn bg-lav-soft border-2 border-line px-3 py-2 text-sm max-w-[150px] sm:max-w-[240px] truncate shrink" onClick={wallet.disconnect} title={`Connected as ${wallet.accountId} — click to disconnect`}>
             👛 {wallet.accountId}
           </button>
         ) : (
-          <button className="btn bg-pink text-white px-4 py-2 text-sm" onClick={wallet.connect} disabled={!wallet.ready}>
+          <button className="btn bg-pink text-white px-3 sm:px-4 py-2 text-sm whitespace-nowrap shrink-0" onClick={wallet.connect} disabled={!wallet.ready}>
             Connect wallet
           </button>
         )}
+        <button
+          className="btn relative z-50 shrink-0 bg-surface border-2 border-line w-11 h-11 grid place-items-center"
+          onClick={() => setMenuOpen((o) => !o)}
+          aria-expanded={menuOpen}
+          aria-controls="pip-menu"
+          aria-label={menuOpen ? "Close menu" : "Open menu"}
+        >
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+            {menuOpen ? <path d="M6 6l12 12M18 6L6 18" /> : <path d="M4 7h16M4 12h16M4 17h16" />}
+          </svg>
+        </button>
       </header>
 
-      {showGuard && (
-        <section className="card pop mt-4 p-4 text-sm">
-          <h2 className="font-semibold mb-1">🛡️ Pilot Guard</h2>
-          <p className="text-ink-soft mb-3">Hard limits checked in your browser before any wallet prompt. Pip can&apos;t change these.</p>
-          <div className="flex flex-wrap gap-4">
-            <label className="flex items-center gap-2">
-              Max NEAR per action
-              <input type="number" min={0.01} step={0.5} value={policy.maxNearPerAction} onChange={(e) => updatePolicy({ ...policy, maxNearPerAction: Number(e.target.value) || 0 })} className="w-24 rounded-xl border-2 border-line bg-surface-2 px-2 py-1" />
-            </label>
-            <label className="flex items-center gap-2">
-              Max USD per action
-              <input type="number" min={1} step={5} value={policy.maxUsdPerAction} onChange={(e) => updatePolicy({ ...policy, maxUsdPerAction: Number(e.target.value) || 0 })} className="w-24 rounded-xl border-2 border-line bg-surface-2 px-2 py-1" />
-            </label>
-          </div>
-        </section>
-      )}
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_300px] flex-1 min-h-0">
+      <div className="mt-4 flex-1 min-h-0 flex">
         {/* chat */}
-        <main className="card min-w-0 flex flex-col min-h-[70dvh] lg:min-h-0 lg:h-[calc(100dvh-140px)]">
+        <main className="card w-full min-w-0 flex flex-col min-h-[70dvh] lg:min-h-0 lg:h-[calc(100dvh-140px)]">
           <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4" aria-live="polite">
             {msgs.map((m, i) =>
               m.role === "user" ? (
@@ -259,14 +257,33 @@ export default function App() {
           </div>
         </main>
 
-        {/* side panel */}
-        <aside className="space-y-4 min-w-0">
+      </div>
+
+      {/* ☰ menu: Guard, skills, meme garden, how it works */}
+      {menuOpen && (
+        <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label="Menu">
+          <button className="absolute inset-0 bg-black/30 backdrop-blur-[2px] cursor-default" aria-label="Close menu" onClick={() => setMenuOpen(false)} />
+        <aside id="pip-menu" className="pop absolute right-0 top-0 h-full w-full max-w-[380px] overflow-y-auto bg-bg border-l-2 border-line p-4 pt-20 space-y-4 shadow-2xl">
+          <section className="card p-4 text-sm">
+            <h2 className="font-semibold mb-1">🛡️ Pilot Guard</h2>
+            <p className="text-ink-soft mb-3">Hard limits checked in your browser before any wallet prompt. Pip can&apos;t change these.</p>
+            <div className="flex flex-col gap-3">
+              <label className="flex items-center justify-between gap-2">
+                Max NEAR per action
+                <input type="number" min={0.01} step={0.5} value={policy.maxNearPerAction} onChange={(e) => updatePolicy({ ...policy, maxNearPerAction: Number(e.target.value) || 0 })} className="w-24 rounded-xl border-2 border-line bg-surface-2 px-2 py-1" />
+              </label>
+              <label className="flex items-center justify-between gap-2">
+                Max USD per action
+                <input type="number" min={1} step={5} value={policy.maxUsdPerAction} onChange={(e) => updatePolicy({ ...policy, maxUsdPerAction: Number(e.target.value) || 0 })} className="w-24 rounded-xl border-2 border-line bg-surface-2 px-2 py-1" />
+              </label>
+            </div>
+          </section>
           <section className="card p-4">
             <h2 className="font-semibold mb-2">✨ What Pip can do</h2>
             <ul className="space-y-1">
               {SKILLS.map((k) => (
                 <li key={k.title}>
-                  <button className="w-full text-left rounded-2xl px-2 py-1.5 hover:bg-surface-2 transition-colors disabled:opacity-50" onClick={() => applySuggestion(k.s)} disabled={busy}>
+                  <button className="w-full text-left rounded-2xl px-2 py-1.5 hover:bg-surface-2 transition-colors disabled:opacity-50" onClick={() => { setMenuOpen(false); applySuggestion(k.s); }} disabled={busy}>
                     <span className="text-sm font-semibold">{k.icon} {k.title}</span>
                     <span className="block text-xs text-ink-soft">{k.desc}</span>
                   </button>
@@ -282,7 +299,7 @@ export default function App() {
                 <p className="text-xs text-ink-soft mb-1.5">Verified</p>
                 <div className="flex flex-wrap gap-1.5 mb-3">
                   {trending.verified.map((v) => (
-                    <button key={v.token} className="btn bg-butter-soft border-2 border-line px-2.5 py-1 text-xs" onClick={() => send(`buy 0.1 near of ${v.token}`)} title={v.token}>
+                    <button key={v.token} className="btn bg-butter-soft border-2 border-line px-2.5 py-1 text-xs" onClick={() => { setMenuOpen(false); send(`buy 0.1 near of ${v.token}`); }} title={v.token}>
                       ${v.symbol}
                     </button>
                   ))}
@@ -293,7 +310,7 @@ export default function App() {
                     <li key={f.token} className="flex items-center gap-2 text-sm">
                       <span className="truncate flex-1" title={f.token}>${f.symbol}</span>
                       <span className="text-[11px] text-ink-soft">{f.ageMin < 120 ? `${f.ageMin}m` : `${Math.round(f.ageMin / 60)}h`}</span>
-                      <button className="btn bg-surface-2 border-2 border-line px-2 py-0.5 text-[11px]" onClick={() => send(`buy 0.1 near of ${f.token}`)}>
+                      <button className="btn bg-surface-2 border-2 border-line px-2 py-0.5 text-[11px]" onClick={() => { setMenuOpen(false); send(`buy 0.1 near of ${f.token}`); }}>
                         quote
                       </button>
                     </li>
@@ -313,7 +330,8 @@ export default function App() {
             </ol>
           </section>
         </aside>
-      </div>
+        </div>
+      )}
     </div>
   );
 }
