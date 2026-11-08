@@ -18,7 +18,6 @@ const ICONS = {
   link: <path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1" />,
   bridge: <path d="M3 17h18M5 17V9m14 8V9M5 9c3 0 4 3 7 3s4-3 7-3M9 17v-4m6 4v-4" />,
   drop: <path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11Z" />,
-  owl: <path d="M6 5l2 2h8l2-2v8a6 6 0 0 1-12 0V5Zm4 6h.01M14 11h.01M11 14h2" />,
   chevron: <path d="M6 9l6 6 6-6" />,
   chart: <path d="M4 20V10m6 10V4m6 16v-7m4 7H2" />,
   trend: <path d="M3 17l6-6 4 4 8-8M15 7h6v6" />,
@@ -54,7 +53,6 @@ const MORE: Pill[] = [
   { icon: "link", label: "Payment link", text: "payment link 5 usdc for coffee" },
   { icon: "bridge", label: "USDC → Base", text: "bridge 5 usdc from near to base" },
   { icon: "drop", label: "Add liquidity", text: "add lp 1 near and usdc" },
-  { icon: "owl", label: "Buy HOOT", text: "buy 0.1 near of hoot" },
   { icon: "swap", label: "Swap on Ref", text: "swap 1 near to usdc on ref" },
 ];
 

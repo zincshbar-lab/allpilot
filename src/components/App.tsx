@@ -18,7 +18,6 @@ const SUGGESTIONS: Suggestion[] = [
   { label: "🔗 Payment link", text: "payment link 5 usdc for coffee" },
   { label: "🚀 Launch a token", fill: "launch My Token $TICKER on hoot", select: "My Token $TICKER" },
   { label: "💧 Add liquidity", text: "add lp 1 near and usdc" },
-  { label: "🦉 Buy HOOT", text: "buy 0.1 near of hoot" },
   { label: "✨ Buy NEARLY", text: "buy 0.1 near of nearly" },
   { label: "🌈 Bridge USDC → Base", text: "bridge 5 usdc from near to base" },
   { label: "🌊 Swap on Ref", text: "swap 1 near to usdc on ref" },
