@@ -9,6 +9,7 @@ import { RichText } from "./RichText";
 import { QuickActions, type Suggestion } from "./QuickActions";
 import { useWallet } from "./useWallet";
 import { fileToIcon } from "@/lib/image";
+import { useVoice } from "./useVoice";
 
 type Msg = { role: "user" | "assistant"; content: string; cards?: ActionCard[] };
 
@@ -67,6 +68,19 @@ export default function App() {
   const [trending, setTrending] = useState<Trending>();
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const voice = useVoice((text) => setInput(text));
+
+  // ?q=… prefills the chat (links from Agent Market deliverables / shared prompts); the user still presses send
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get("q");
+    if (q) {
+      const t = setTimeout(() => {
+        setInput(q.slice(0, 500));
+        inputRef.current?.focus();
+      }, 0);
+      return () => clearTimeout(t);
+    }
+  }, []);
   const fileRef = useRef<HTMLInputElement>(null);
   const [icon, setIcon] = useState<string>();
   const [iconError, setIconError] = useState<string>();
@@ -205,6 +219,8 @@ export default function App() {
                 </button>
               ))}
             </div>
+            {voice.error && <p className="mb-2 text-xs text-danger">{voice.error}</p>}
+            {voice.listening && <p className="mb-2 text-xs text-ink-soft">🎤 Listening… speak in any language, then check the text and press send.</p>}
             {(icon || iconError) && (
               <div className="flex items-center gap-2 mb-2 text-xs">
                 {icon && (
@@ -238,11 +254,23 @@ export default function App() {
               <button type="button" className="btn bg-surface-2 border-2 border-line px-3" onClick={() => fileRef.current?.click()} aria-label="Upload token picture" title="Upload a token picture">
                 📎
               </button>
+              {voice.supported && (
+                <button
+                  type="button"
+                  className={`btn border-2 border-line px-3 ${voice.listening ? "bg-pink text-white animate-pulse" : "bg-surface-2"}`}
+                  onClick={() => (voice.listening ? voice.stop() : voice.start())}
+                  aria-label={voice.listening ? "Stop voice input" : "Speak your message"}
+                  aria-pressed={voice.listening}
+                  title="Talk to Pip (any language)"
+                >
+                  🎤
+                </button>
+              )}
               <input
                 ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder='Try "buy 0.2 near of hoot" or "pay alice.near 5 usdc"'
+                placeholder='Type or 🎤 talk — any language. Try "buy 0.2 near of hoot"'
                 className="flex-1 min-w-0 rounded-full border-2 border-line bg-surface-2 px-4 py-3 outline-none focus:border-lav"
                 aria-label="Message Pip"
               />

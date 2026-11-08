@@ -238,7 +238,7 @@ async function intentsCard(o: {
   warnings.push(...impactWarning(Number(quote.amountInUsd) || undefined, Number(quote.amountOutUsd) || undefined));
 
   const transactions: PlannedTx[] = [];
-  let externalDeposit: { chain: string; symbol: string; amount: string } | undefined;
+  let externalDeposit: NonNullable<NonNullable<ActionCard["intents"]>["externalDeposit"]> | undefined;
   const depositAddress = quote.depositAddress;
 
   if (canExecute && depositAddress) {
@@ -260,7 +260,15 @@ async function intentsCard(o: {
       }
       appendTx(transactions, { receiverId: token, actions });
     } else {
-      externalDeposit = { chain: chainName(o.origin.blockchain), symbol: o.origin.symbol, amount: o.amountHuman };
+      externalDeposit = {
+        chain: chainName(o.origin.blockchain),
+        symbol: o.origin.symbol,
+        amount: o.amountHuman,
+        chainCode: o.origin.blockchain,
+        amountBase: o.amountIn,
+        tokenAddress: o.origin.contractAddress ?? null,
+        decimals: o.origin.decimals,
+      };
       if (o.dest.blockchain === "near" && o.accountId) {
         const outToken = o.dest.contractAddress ?? o.dest.assetId.replace(/^nep141:/, "");
         transactions.push(...(await prepTxs({ accountId: o.accountId, outputToken: outToken })));

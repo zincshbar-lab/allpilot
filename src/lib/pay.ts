@@ -85,7 +85,7 @@ export async function pay(p: PayInput): Promise<ActionCard> {
   const outSym = dest.symbol === "wNEAR" ? "NEAR" : dest.symbol;
 
   const transactions: PlannedTx[] = [];
-  let externalDeposit: { chain: string; symbol: string; amount: string } | undefined;
+  let externalDeposit: NonNullable<NonNullable<ActionCard["intents"]>["externalDeposit"]> | undefined;
   if (canExecute && quote.depositAddress) {
     if (originOnNear && p.accountId) {
       const token = origin.contractAddress ?? origin.assetId.replace(/^nep141:/, "");
@@ -100,7 +100,15 @@ export async function pay(p: PayInput): Promise<ActionCard> {
       actions.push(ftTransfer(quote.depositAddress, quote.amountIn));
       appendTx(transactions, { receiverId: token, actions });
     } else {
-      externalDeposit = { chain: chainName(origin.blockchain), symbol: origin.symbol, amount: quote.amountInFormatted };
+      externalDeposit = {
+        chain: chainName(origin.blockchain),
+        symbol: origin.symbol,
+        amount: quote.amountInFormatted,
+        chainCode: origin.blockchain,
+        amountBase: quote.amountIn,
+        tokenAddress: origin.contractAddress ?? null,
+        decimals: origin.decimals,
+      };
     }
   }
 

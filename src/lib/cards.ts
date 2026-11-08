@@ -7,7 +7,7 @@ export type Venue = "near-intents" | "rhea" | "rhea-dcl" | "direct" | "rhea-lend
 
 export type ActionCard = {
   id: string;
-  kind: "swap" | "bridge" | "meme" | "pay" | "link" | "launch" | "lp" | "lend" | "stake" | "portfolio" | "analysis" | "pnl" | "info";
+  kind: "swap" | "bridge" | "meme" | "pay" | "link" | "launch" | "lp" | "lend" | "stake" | "portfolio" | "analysis" | "pnl" | "share" | "info";
   title: string;
   venue?: Venue;
   launchpad?: "justhoot" | "nearly" | null;
@@ -31,10 +31,21 @@ export type ActionCard = {
   intents?: {
     depositAddress: string;
     depositMemo?: string;
-    externalDeposit?: { chain: string; symbol: string; amount: string };
+    externalDeposit?: {
+      chain: string; // display name
+      symbol: string;
+      amount: string; // human amount
+      /** For paying straight from MetaMask / Phantom: */
+      chainCode?: string; // 1Click blockchain id: eth, base, arb, sol, …
+      amountBase?: string; // exact amount in the token's smallest unit
+      tokenAddress?: string | null; // ERC-20 / SPL mint; null = the chain's native coin
+      decimals?: number;
+    };
   };
   /** Payments: the recipient the user named. The Pilot Guard allows plain transfers only to this account. */
   payment?: { recipient: string; chain: string; memo?: string };
+  /** Shareable image (PnL card): PNG url, share page, X intent. */
+  share?: { image: string; page: string; xUrl: string };
   /** Payment links: shareable checkout URL + embed snippets. */
   checkout?: { url: string; iframe: string; button: string };
   needsWallet?: boolean;

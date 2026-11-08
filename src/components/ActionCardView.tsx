@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { ActionCard } from "@/lib/cards";
 import { checkCard, type GuardPolicy } from "@/lib/guard";
+import { EVM_CHAIN_IDS, payWithEvm, payWithPhantom } from "@/lib/externalPay";
 
 const VENUE: Record<string, { label: string; cls: string; icon: string }> = {
   "near-intents": { label: "NEAR Intents", cls: "bg-sky-soft", icon: "🌐" },
@@ -25,6 +26,7 @@ const KIND: Record<ActionCard["kind"], { icon: string; tint: string }> = {
   portfolio: { icon: "👛", tint: "bg-mint-soft" },
   analysis: { icon: "🔍", tint: "bg-sky-soft" },
   pnl: { icon: "📊", tint: "bg-butter-soft" },
+  share: { icon: "📸", tint: "bg-pink-soft" },
   info: { icon: "💡", tint: "bg-pink-soft" },
 };
 
@@ -174,6 +176,25 @@ export function ActionCardView({
 
       {card.checkout && <CheckoutSnippets checkout={card.checkout} />}
 
+      {card.share && (
+        <div className="px-4 pb-4 space-y-3">
+          {/* eslint-disable-next-line @next/next/no-img-element -- generated PNG */}
+          <img src={card.share.image} alt="Your PnL card" className="w-full rounded-2xl border-2 border-line bg-surface-2 min-h-24" />
+          <div className="flex flex-wrap gap-2">
+            <a href={card.share.xUrl} target="_blank" rel="noreferrer" className="btn bg-ink text-bg px-4 py-2 text-sm">
+              Post on 𝕏
+            </a>
+            <a href={card.share.image} download="allpilot-pnl.png" className="btn bg-surface border-2 border-line px-4 py-2 text-sm">
+              Download image
+            </a>
+            <button className="btn bg-surface border-2 border-line px-4 py-2 text-sm" onClick={() => navigator.clipboard?.writeText(card.share!.page)}>
+              Copy link
+            </button>
+          </div>
+          <p className="text-xs text-ink-soft">The link shows this card as a preview on X. Numbers come from your on-chain swaps, so they can&apos;t be edited.</p>
+        </div>
+      )}
+
       {external && card.intents && (
         <div className="mx-4 mb-3 rounded-2xl bg-sky-soft px-3 py-3 text-sm">
           <p className="font-semibold mb-1">Send from your {external.chain} wallet</p>
@@ -183,7 +204,33 @@ export function ActionCardView({
             <button className="btn bg-surface border-2 border-line px-3 py-1.5 text-xs" onClick={() => navigator.clipboard?.writeText(card.intents!.depositAddress)}>Copy</button>
           </div>
           {card.intents.depositMemo && <p className="mt-1 text-xs">Memo (required): <code>{card.intents.depositMemo}</code></p>}
-          <button className="btn mt-3 bg-surface border-2 border-line px-3 py-1.5 text-xs" onClick={() => setStatus("tracking")} disabled={status === "tracking" || status === "done"}>
+          {external.amountBase && !card.intents.depositMemo && (EVM_CHAIN_IDS[external.chainCode ?? ""] || external.chainCode === "sol") && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                className="btn bg-pink text-white px-4 py-2 text-sm"
+                disabled={status === "signing" || status === "tracking" || status === "done"}
+                onClick={async () => {
+                  setError(undefined);
+                  setStatus("signing");
+                  try {
+                    const hash =
+                      external.chainCode === "sol"
+                        ? await payWithPhantom({ to: card.intents!.depositAddress, amountBase: external.amountBase!, tokenAddress: external.tokenAddress ?? null, decimals: external.decimals ?? 9 })
+                        : await payWithEvm({ chainCode: external.chainCode!, to: card.intents!.depositAddress, amountBase: external.amountBase!, tokenAddress: external.tokenAddress ?? null });
+                    setHashes([hash]);
+                    setStatus("tracking");
+                  } catch (e) {
+                    setStatus("idle");
+                    setError(e instanceof Error ? e.message : String(e));
+                  }
+                }}
+              >
+                {status === "signing" ? "Confirm in your wallet…" : external.chainCode === "sol" ? "👻 Pay with Phantom" : "🦊 Pay with MetaMask"}
+              </button>
+              <span className="self-center text-[11px] text-ink-soft">sends exactly {external.amount} {external.symbol} to the address above</span>
+            </div>
+          )}
+          <button className="btn mt-3 bg-surface border-2 border-line px-3 py-1.5 text-xs" onClick={() => setStatus("tracking")} disabled={status === "tracking" || status === "done" || status === "signing"}>
             I&apos;ve sent it — track it
           </button>
         </div>

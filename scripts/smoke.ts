@@ -15,6 +15,8 @@ import { checkCard } from "../src/lib/guard";
 import { portfolioCard } from "../src/lib/portfolio";
 import { analyzeToken } from "../src/lib/analyze";
 import { pnlCard } from "../src/lib/pnl";
+import { sharePnlCard } from "../src/lib/pnlShare";
+import { launchOptions } from "../src/lib/launch";
 
 const acct = process.argv[2] ?? "zavodil.near";
 const POLICY = { maxNearPerAction: 1000, maxUsdPerAction: 100000 };
@@ -60,6 +62,9 @@ async function run(name: string, f: () => Promise<ActionCard>) {
   await run("pay (exact output, pay in NEAR)", () => pay({ to: "intents.near", amount: "1", token: "USDC", payWith: "NEAR", accountId: acct }));
   await run("payment link", () => paymentLink({ to: "intents.near", amount: "10", token: "USDC", memo: "Order 42", baseUrl: "https://allpilot.vercel.app" }));
   await run("launch token (JustHoot)", () => launchToken({ launchpad: "justhoot", name: "Smoke Test", symbol: "SMOKE", icon: TEST_ICON, accountId: acct }));
+  await run("launch JustHoot · USDC pair · 3% tax · 50/25/25 split · hosted description", () => launchToken({ launchpad: "justhoot", name: "Smoke Tax", symbol: "SMKT", pair: "USDC", taxPct: 3, split: { creator: 50, burn: 25, holders: 25 }, description: "smoke test", accountId: acct, baseUrl: "https://allpilot.vercel.app" }));
+  await run("launch nearly · RHEA pair · 2%/3% tax · fees to holders · fee_to", () => launchToken({ launchpad: "nearly", name: "Smoke Tax", symbol: "SMKT", pair: "RHEA", buyTaxPct: 2, sellTaxPct: 3, split: { creator: 0, burn: 50, holders: 50 }, feeMode: "holders", accountId: acct }));
+  await run("share PnL card (image + X link)", () => sharePnlCard("wowzer.near", "https://allpilot.vercel.app"));
   await run("launch token (nearly.trade)", () => launchToken({ launchpad: "nearly", name: "Smoke Test", symbol: "SMOKE", description: "test", icon: TEST_ICON, accountId: acct }));
   await run("add liquidity (Rhea)", () => addLiquidity({ tokenA: "near", tokenB: "usdc", amountA: "1", accountId: acct }));
   await run("lend (supply USDC)", () => supply({ token: "usdc", amount: "10", accountId: acct }));
@@ -71,8 +76,8 @@ async function run(name: string, f: () => Promise<ActionCard>) {
   await run("stake (validator)", () => stake({ amount: "1", provider: "astro-stakers.poolv1.near", accountId: acct }));
 
   try {
-    const [t, l, s] = await Promise.all([trendingMemes(), lendingOverview(), stakingOverview()]);
-    console.log(`\n✅ info: ${t.freshOnNearly.length} fresh launches · ${l.markets.length} lending markets · ${s.liquid.length} liquid-staking providers`);
+    const [t, l, s, o] = await Promise.all([trendingMemes(), lendingOverview(), stakingOverview(), launchOptions()]);
+    console.log(`\n✅ info: ${t.freshOnNearly.length} fresh launches · ${l.markets.length} lending markets · ${s.liquid.length} liquid-staking providers · launch pairs JustHoot ${o.justhoot.pairs.length} / nearly ${o.nearly.pairs.length}`);
     passed++;
   } catch (e) {
     console.log(`\n❌ info: ${e instanceof Error ? e.message : e}`);
