@@ -160,18 +160,22 @@ Anyone can open extra pools for a meme with thin or skewed liquidity. On Rhea DC
 | JustHoot v2 | `v2-pool-creator.justhoot.near.get_launch_state({token_id})` → `launch.plan.pool_id`, confirmed by `v2-launchpad.justhoot.near.is_launched_token` |
 | nearly.trade | `nearlytrade.near` launch record → `pool_id` + `quote` |
 
-The pool must also exist on Rhea DCL and contain the token. If a meme launched against another asset (e.g. OYSTER/PRL, IDOG/AINEAR), the route is *official meme pool + the best pool between that asset and NEAR*. If the official pool can't be verified, Allpilot **refuses** to trade the token rather than fall back to some other pool. Meme cards show `Pool: ✅ official … launch pool` with the pool id, and the token analyzer lists the official pool and how many other pools it ignores. Portfolio and PnL prices use the official pool too.
+The pool must also exist on Rhea DCL and contain the token. If a meme launched against another asset (e.g. OYSTER/PRL, IDOG/AINEAR), the route is *official meme pool + the deepest path between that asset and NEAR* (see "Any pairing" below). If the official pool can't be verified, Allpilot **refuses** to trade the token rather than fall back to some other pool. Meme cards show `Route: ✅ official … launch pool · NEAR → … → TOKEN` with the official pool id, and the token analyzer lists the official pool and how many other pools it ignores. Portfolio and PnL prices use the official pool too.
 
-### 🌊 Deepest-liquidity routing (everything else)
+### 🌊 Any pairing: NEAR can buy & sell tokens paired with other assets
 
-Tokens that don't come from JustHoot or nearly.trade (tkn.near and meme.cooking memes, BLACKDRAGON, SHITZU, bridged tokens…) often have many pools, some tiny. A tiny pool can show a nice quote and then slip hard, so Allpilot routes through **real liquidity** instead of "best quote anywhere" (`src/lib/deeproute.ts`):
+One router (`src/lib/deeproute.ts`) gets **NEAR to and from any token, whatever it's paired with**: USDC, USDT, PRL, ZEC, RHEA, WBTC, KAT, HOOT, NEARLY, other memes, and so on.
 
-1. Collect every pool holding the token: Rhea classic (USD TVL from Rhea's API) and Rhea DCL (`total_x`/`total_y` × prices).
-2. If the deepest pool pairs the token with something other than what you're paying/receiving (e.g. USDC), add the deepest pool between that asset and yours **in the same venue**. One transaction can't mix classic and DCL.
-3. A route is only as deep as its shallowest pool: pick the deepest route, then quote it exactly on-chain (`get_return` for classic, `quote` for DCL) and build the swap for those exact pools.
-4. **Safety floor:** if even the deepest route holds under **$50**, Allpilot refuses the trade. Under $1,000 it warns "thin market".
+1. **Launchpad memes** (JustHoot, nearly.trade): the meme leg is always the **official launch pool**. The rest of the way, from its quote asset to NEAR, is the deepest path.
+2. **Everything else**: every Rhea pool holding the token is measured in USD liquidity. That's classic **simple, stable, rated and degen** pools (so LiNEAR/stNEAR use their $3–4M pools) and **all** DCL pools. The route starts at the deepest one.
+3. **Hub hops**: if there's no direct pool to NEAR, the path goes through a hub (NEAR, USDC or USDT), e.g. `NEAR → USDC → PEARL → OYSTER`. A direct pool is preferred unless a hub route is much deeper.
+4. **Two linked transactions** when needed: Rhea classic and Rhea DCL are separate contracts, so if the liquidity lives in both (e.g. ALPHAR is launched against RHEA, but RHEA↔NEAR liquidity is in classic pools), Allpilot builds **two swaps signed together**: `NEAR → RHEA` (classic), then `RHEA → ALPHAR` (official DCL pool). The second swap spends exactly the first one's guaranteed minimum, so it can't fail on amount. Any surplus from a better fill stays in your wallet, and the card says so.
+5. **NEAR Intents fallback**: if Rhea has no route but NEAR Intents' solvers support the token, it's quoted through Intents.
+6. **Safety**: routes whose shallowest pool holds under **$50** are refused (warn under $1,000). Selling into a launch pool **nobody has bought into yet** is explained instead of failing silently.
 
-Cards show `Pool: 🌊 deepest Rhea route · $40,898 liquidity` plus the pool ids. Examples: BLACKDRAGON → classic pool #4276 ($40.9K); SHITZU → #4369 ($50.9K); PRL → NEAR→USDC→PRL through the ~$534K DCL USDC/PRL pool. Swaps with tokens NEAR Intents supports still go through Intents, whose solvers source deep liquidity.
+Cards show the full path and how it was chosen, e.g. `Route: ✅ official nearly.trade launch pool · NEAR → RHEA → ALPHAR` or `Route: 🌊 deepest liquidity · $40,898 · NEAR → BLACKDRAGON`, plus the pool ids and "2 linked swaps" when used.
+
+**Coverage check** (read-only survey of real tokens paired with non-NEAR assets): every token whose pair asset has *any* real path to NEAR works for both buy and sell. That includes pairs against HOOT, ZEC, PRL, RHEA, WBTC, NEARLY, QTC, KAT, USDC, USDC.e and other memes. The only ones that can't trade are honest limits: launch pools nobody has bought into yet (nothing to sell into), dead test launches, and tokens launched against bridged BNB-chain memes that have **no pool against NEAR/USDC/USDT anywhere on NEAR** and aren't on NEAR Intents.
 
 ### 🛡️ Pilot Guard (agent safety)
 
@@ -201,7 +205,7 @@ npm run dev
 Open http://localhost:3000, then:
 
 0. The page shows the logo, your wallet button and a **☰** button; everything else (Pilot Guard settings, "What Pip can do", Meme garden, how it works) lives in the ☰ menu, which opens and closes on click (or Esc). Under Pip's welcome message you'll see quick-action pills (**Launch a token**, **Portfolio**, **Earn yield**, **Swap**, **Pay a friend**, **More**). Click **More** to reveal the rest.
-1. Type `buy 0.1 near of hoot`. You should see a card with the verified contract `hoot-8ecf65.launchpad.justhoot.near`, a live quote, **`Pool: ✅ official JustHoot launch pool`** with pool id `hoot-8ecf65.launchpad.justhoot.near|wrap.near|10000` (HOOT has 24 pools; only this one is used), and a warning about lookalike tokens.
+1. Type `buy 0.1 near of hoot`. You should see a card with the verified contract `hoot-8ecf65.launchpad.justhoot.near`, a live quote, **`Route: ✅ official JustHoot launch pool · NEAR → HOOT`** with official pool `hoot-8ecf65.launchpad.justhoot.near|wrap.near|10000` (HOOT has 24 pools; only this one is used), and a warning about lookalike tokens.
 2. Click the **Swap** pill (sends `swap 1 near to usdc`). You should see a NEAR Intents quote (est. output, minimum, ~time).
 3. Type `bridge 5 usdc from near to base 0x2527D02599Ba641c19FEa793cD0F167589a0f10D`. You should see a bridge card with the recipient filled in.
 4. Click **Connect wallet**, then repeat any request. The card now has **Sign with wallet (n tx)** and a green **Pilot Guard** line.
@@ -215,7 +219,8 @@ Open http://localhost:3000, then:
 12. Paste `hoot-17.nearlytrade.near`. You should see a 🔍 analysis with **Risk signals · high** and *"NOT the verified $HOOT — the real one is hoot-8ecf65.launchpad.justhoot.near"*, plus its creator wallet, wallet age, funder and tax (buy 4% · sell 4%). Then type `analyze hoot` for the real one (creator `justhoot-owner.near`, wallet age, tokens launched, creator holds ~12%).
 13. Connect a wallet and click **Portfolio**. You should see every token you hold with price and USD value, memes tagged by launchpad.
 14. Connect a wallet that has traded memes and click **My PnL**. You should see total PnL in NEAR and $, realized vs. unrealized, and one row per token with buys/sells, invested, ROI and "closed" or "N held".
-15. Type `buy 1 near of blackdragon`. You should see `Pool: 🌊 deepest Rhea route · $40K+ liquidity` with pool id `4276` (not one of BLACKDRAGON's smaller pools). Then `buy 0.5 near of nd.tkn.near`: it's refused because even its deepest pool is under the $50 liquidity floor.
+15. Type `buy 1 near of blackdragon`. You should see `Route: 🌊 deepest liquidity · $40K+ · NEAR → BLACKDRAGON` with pool `4276` (not one of BLACKDRAGON's smaller pools). Then `buy 0.5 near of nd.tkn.near`: it's refused because even its deepest pool is under the $50 liquidity floor.
+16. Type `buy 1 near of alphar.nearlytrade.near` (launched against RHEA). You should see `Route: ✅ official nearly.trade launch pool · NEAR → RHEA → ALPHAR` and `Transactions: 2 linked swaps (Rhea classic + DCL), signed together`. Then `buy 1 near of oyster.v2-launchpad.justhoot.near` shows `NEAR → USDC → PEARL → OYSTER` in one transaction.
 
 **Without `NEAR_AI_API_KEY`** the app runs in *offline brain* mode: a small command parser that handles every typed command above (swap, buy/sell, bridge, pay, payment link, launch, add lp, supply/borrow/repay/withdraw, stake/unstake), so everything stays reproducible. Only the free-form questions (like the **Earn yield** pill) need the key. **With a key** (get one at https://cloud.near.ai), Pip understands free-form chat and calls the same tools.
 
@@ -225,7 +230,7 @@ Read-only smoke test of **every feature** (live mainnet quotes, builds the unsig
 npm run smoke                      # or: npm run smoke -- your-account.near
 ```
 
-Expected: `21 passed, 0 failed. Nothing was signed or sent.`
+Expected: `23 passed, 0 failed. Nothing was signed or sent.`
 
 ## Architecture
 
@@ -252,7 +257,7 @@ src/
   lib/launchpads.ts         known NEAR token factories / launchpads
   lib/intents.ts            NEAR Intents 1Click client
   lib/rhea.ts               Rhea smart router + v2.ref-finance.near swap builder (major tokens)
-  lib/deeproute.ts          deepest-liquidity routing for non-launchpad tokens ($50 floor)
+  lib/deeproute.ts          universal router: official meme pools, deepest liquidity, hub hops, two-step classic+DCL routes, $50 floor
   lib/dcl.ts                Rhea DCL pool index, official launch-pool registry, quotes, swap builder, nearly.trade launches
   lib/tokens.ts             symbol → contract resolver, verified list, copycat ranking
   lib/near.ts               read-only RPC (with fallback + timeouts), unit helpers
@@ -321,6 +326,7 @@ All built during NEAR HACKATHON (git history, `main`):
 10. PnL on buys and sells; new robot-pilot logo
 11. Simpler page (☰ menu); meme trades locked to each token's official launch pool
 12. Deepest-liquidity routing for all other tokens, with a $50 liquidity floor
+13. Any pairing: hub hops (NEAR/USDC/USDT), all Rhea pool types, two linked classic+DCL swaps, NEAR Intents fallback
 
 ## Hackathon compliance notes
 

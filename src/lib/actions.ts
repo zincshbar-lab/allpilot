@@ -1,11 +1,11 @@
 // High-level actions the AI can call. Each returns an ActionCard (a proposal) — never signs.
 
 import type { ActionCard, Venue } from "./cards";
-import { NoOfficialPoolError, latestNearlyLaunches, officialPool, planDclSwap } from "./dcl";
+import { NoOfficialPoolError, latestNearlyLaunches } from "./dcl";
 import { findIntentsToken, intentsQuote, intentsTokens, normalizeChain, type IntentsToken } from "./intents";
-import { WRAP_NEAR, fromBase, ftBalance, getNativeBalance, isNearAccountId, storageNeeded, toBase } from "./near";
+import { WRAP_NEAR, fromBase, ftBalance, ftMetadata, getNativeBalance, isNearAccountId, storageNeeded, toBase } from "./near";
 import { planRheaSwap } from "./rhea";
-import { ThinLiquidityError, planDeepSwap, type DeepRoute } from "./deeproute";
+import { NoRouteError, ThinLiquidityError, planRoute, type RoutePlan } from "./deeproute";
 import { launchpadName } from "./launchpads";
 import { resolveToken, rheaPrices, VERIFIED, type TokenInfo } from "./tokens";
 import { PlannedTx, appendTx, fc, ftTransfer, prepTxs, storageDeposit, totalAttachedNear } from "./tx";
@@ -25,6 +25,20 @@ const MAJORS = new Set([
   "lst.rhealab.near",
   "aaaaaa20d9e0e2461697782ef11675f668207961.factory.bridge.near",
 ]);
+
+async function symbolOf(token: string): Promise<string> {
+  if (token === WRAP_NEAR) return "NEAR";
+  if (VIA_NAMES[token]) return VIA_NAMES[token];
+  return (await ftMetadata(token).catch(() => null))?.symbol ?? token.split(".")[0].slice(0, 10).toUpperCase();
+}
+
+async function routeLabel(plan: RoutePlan, where: string): Promise<string> {
+  const path: string[] = [];
+  for (const sg of plan.segments) for (const tk of sg.tokens) if (path.at(-1) !== tk) path.push(tk);
+  const names = await Promise.all(path.map(symbolOf));
+  const how = plan.official ? `✅ official ${where} launch pool` : `🌊 deepest liquidity · $${Math.round(plan.liquidityUsd).toLocaleString("en-US")}`;
+  return `${how} · ${names.join(" → ")}`;
+}
 
 const VIA_NAMES: Record<string, string> = {
   "17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1": "USDC",
@@ -93,6 +107,7 @@ export async function swap(opts: {
   venue?: "near-intents" | "rhea" | "auto";
   accountId?: string;
   slippageBps?: number;
+  noLongTailRedirect?: boolean;
 }): Promise<ActionCard> {
   const [rin, rout] = await Promise.all([resolveToken(opts.from), resolveToken(opts.to)]);
   if (!rin.best) throw new Error(`I couldn't find a token called "${opts.from}" on NEAR.`);
@@ -109,7 +124,7 @@ export async function swap(opts: {
   // NEAR ↔ a long-tail token (not a major, not on NEAR Intents): use the deepest-liquidity route
   const isNear = (t: TokenInfo) => t.id === "near" || t.id === WRAP_NEAR;
   const isMajor = async (t: TokenInfo) => isNear(t) || MAJORS.has(t.id) || !!(await findIntentsTokenById(t.id));
-  if ((isNear(tin) && !(await isMajor(tout))) || (isNear(tout) && !(await isMajor(tin)))) {
+  if (!opts.noLongTailRedirect && ((isNear(tin) && !(await isMajor(tout))) || (isNear(tout) && !(await isMajor(tin))))) {
     const longTail = isNear(tin) ? tout : tin;
     return memeTrade({ token: longTail.id, side: isNear(tin) ? "buy" : "sell", amount: opts.amount, accountId: opts.accountId, slippageBps: opts.slippageBps });
   }
@@ -360,26 +375,25 @@ export async function memeTrade(opts: {
   const amountIn = toBase(opts.amount, decIn);
 
   // Launchpad memes: only their official launch pool. Everything else: the route with the deepest real liquidity.
-  const dcl = t.launchpad
-    ? await planDclSwap({ tokenIn, tokenOut, amountIn, slippageBps: slippage, accountId: opts.accountId }).catch((e) => {
-        if (e instanceof NoOfficialPoolError) throw e; // never fall back to unofficial pools for launchpad memes
-        return null;
-      })
-    : null;
-  const deep: DeepRoute | null = t.launchpad
-    ? null
-    : await planDeepSwap({ tokenIn, tokenOut, amountIn, slippageBps: slippage, accountId: opts.accountId, longTail: t.id }).catch((e) => {
-        if (e instanceof ThinLiquidityError) throw new Error(`Not trading ${t.symbol}: ${e.message}`);
-        return null;
-      });
-  const useDcl = !!dcl || deep?.venue === "rhea-dcl";
-  const plan = dcl ?? deep;
-  if (!plan) throw new Error(t.launchpad ? `${t.symbol}'s official launch pool has no liquidity to ${side} into right now.` : `No pool with real liquidity found to ${side} ${t.symbol} (${t.id}).`);
-  const off = t.launchpad ? await officialPool(t.id) : null;
+  // Either way the rest of the path to NEAR goes through hub assets / a second linked transaction if needed.
+  let plan: RoutePlan;
+  try {
+    plan = await planRoute({ tokenIn, tokenOut, amountIn, slippageBps: slippage, accountId: opts.accountId });
+  } catch (e) {
+    if (e instanceof NoOfficialPoolError) throw e;
+    if (e instanceof ThinLiquidityError) throw new Error(`Not trading ${t.symbol}: ${e.message}`);
+    // one-sided launch pools: nobody has bought yet, so there's nothing to sell into
+    if (t.launchpad && side === "sell") throw new Error(`${t.symbol}'s launch pool has no buyers yet, so there's nothing to sell into right now.`);
+    // last resort: NEAR Intents, if its solvers support the token
+    if (!t.launchpad && (await findIntentsTokenById(t.id).catch(() => null))) {
+      return swap({ from: side === "buy" ? "near" : t.id, to: side === "buy" ? t.id : "near", amount: opts.amount, venue: "near-intents", accountId: opts.accountId, slippageBps: opts.slippageBps, noLongTailRedirect: true });
+    }
+    throw new Error(e instanceof NoRouteError ? `No route with real liquidity to ${side} ${t.symbol} (${t.id}).` : `Couldn't route ${t.symbol}: ${e instanceof Error ? e.message : e}`);
+  }
+  const off = plan.official ?? null;
 
   const where = t.launchpad ? LAUNCHPAD_NAME[t.launchpad] : launchpadName(t.id) ?? "Rhea";
-  const thin = !!deep && deep.liquidityUsd < 1000;
-  const viaLabel = (tok: string) => (tok === WRAP_NEAR ? "NEAR" : VIA_NAMES[tok] ?? tok.split(".")[0].slice(0, 10).toUpperCase());
+  const thin = !off && plan.liquidityUsd < 1000;
   const symIn = side === "buy" ? "NEAR" : t.symbol;
   const symOut = side === "buy" ? t.symbol : "NEAR";
   const usdIn = side === "buy" ? Number(opts.amount) * nearPrice : usd(amountIn, t.decimals, t.priceUsd);
@@ -389,7 +403,7 @@ export async function memeTrade(opts: {
     id: uid(),
     kind: "meme",
     title: `${side === "buy" ? "Buy" : "Sell"} ${t.symbol} ${side === "buy" ? `with ${opts.amount} NEAR` : `· ${opts.amount}`}`,
-    venue: useDcl ? "rhea-dcl" : "rhea",
+    venue: plan.segments.some((sg) => sg.venue === "rhea-dcl") ? "rhea-dcl" : "rhea",
     launchpad: t.launchpad,
     lines: [
       { label: "Token", value: `${t.symbol}${t.name && t.name !== t.symbol ? ` · ${t.name}` : ""}` },
@@ -398,21 +412,16 @@ export async function memeTrade(opts: {
       { label: "You pay", value: `${opts.amount} ${symIn}` },
       { label: "You get (est.)", value: `${fromBase(plan.amountOut, decOut)} ${symOut}` },
       { label: "Minimum", value: `${fromBase(plan.minAmountOut, decOut)} ${symOut}` },
-      off
-        ? { label: "Pool", value: `✅ official ${where} launch pool${dcl!.poolIds.length > 1 ? ` + ${off.quote === "wrap.near" ? "" : "best "}${off.quote.split(".")[0].toUpperCase()}↔NEAR hop` : ""}` }
-        : deep
-          ? {
-              label: "Pool",
-              value: `🌊 deepest ${deep.venue === "rhea-dcl" ? "Rhea DCL" : "Rhea"} route · $${Math.round(deep.liquidityUsd).toLocaleString("en-US")} liquidity${deep.poolIds.length > 1 ? ` · via ${viaLabel(deep.tokens[1])}` : ""}`,
-            }
-          : { label: "Pool", value: "Rhea" },
-      ...(off ? [{ label: "Pool id", value: off.poolId }] : deep ? [{ label: "Pool id", value: deep.poolIds.join(" → ") }] : []),
+      { label: "Route", value: await routeLabel(plan, where) },
+      ...(off ? [{ label: "Official pool", value: off.poolId }] : [{ label: "Pools", value: plan.segments.map((sg) => sg.poolIds.join(" → ")).join("  ⟶  ") }]),
+      ...(plan.segments.length > 1 ? [{ label: "Transactions", value: `${plan.segments.length} linked swaps (Rhea classic + DCL), signed together` }] : []),
       { label: "Slippage", value: `${slippage / 100}%` },
     ],
     warnings: [
       ...lookalikeWarning(t.symbol, r.lookalikes, t),
       ...impactWarning(usdIn, usdOut),
-      ...(thin ? [`Thin market: even the deepest pool only holds ~$${Math.round(deep!.liquidityUsd)}. Big trades will move the price a lot.`] : []),
+      ...(thin ? [`Thin market: even the deepest route only holds ~$${Math.round(plan.liquidityUsd)}. Big trades will move the price a lot.`] : []),
+      ...(plan.leftoverToken ? [`Two-step route: if the first swap fills better than its minimum, the small surplus stays in your wallet as ${await symbolOf(plan.leftoverToken)}.`] : []),
     ],
     transactions: plan.transactions,
     nearSpend: totalAttachedNear(plan.transactions).toString(),

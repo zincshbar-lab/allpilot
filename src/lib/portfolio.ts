@@ -3,7 +3,7 @@
 // quoting a sale of 1 token into wNEAR through their Rhea DCL pool.
 
 import type { ActionCard } from "./cards";
-import { planDclSwap } from "./dcl";
+import { planRoute } from "./deeproute";
 import { heldTokens } from "./history";
 import { WRAP_NEAR, fromBase, ftMetadata, getNativeBalance } from "./near";
 import { rheaPrices, VERIFIED } from "./tokens";
@@ -29,7 +29,7 @@ export async function priceUsd(tokenId: string, decimals: number): Promise<{ pri
   if (p && Number(p.price) > 0) return { price: Number(p.price), source: "rhea" };
   const nearUsd = Number(prices[WRAP_NEAR]?.price ?? 0);
   if (!nearUsd) return {};
-  const plan = await planDclSwap({ tokenIn: tokenId, tokenOut: "near", amountIn: (10n ** BigInt(decimals)).toString(), slippageBps: 100 }).catch(() => null);
+  const plan = await planRoute({ tokenIn: tokenId, tokenOut: "near", amountIn: (10n ** BigInt(decimals)).toString(), slippageBps: 100 }).catch(() => null);
   if (!plan || plan.amountOut === "0") return {};
   return { price: (Number(plan.amountOut) / 1e24) * nearUsd, source: "pool" };
 }
