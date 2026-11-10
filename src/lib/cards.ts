@@ -51,6 +51,8 @@ export type ActionCard = {
   needsWallet?: boolean;
   links?: { label: string; href: string }[];
   expiresAt?: number;
+  /** Restored from a saved chat: the quote is old, so it can't be signed or paid. */
+  archived?: boolean;
 };
 
 export type CardSection = { title: string; lines: { label: string; value: string }[] };

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import type { ActionCard, ChatResponse } from "@/lib/cards";
+import type { ChatResponse } from "@/lib/cards";
 import { getPolicy, getServerPolicy, savePolicy, subscribePolicy, type GuardPolicy } from "@/lib/guard";
 import { ActionCardView } from "./ActionCardView";
 import { Pip } from "./Pip";
@@ -10,8 +10,23 @@ import { QuickActions, type Suggestion } from "./QuickActions";
 import { useWallet } from "./useWallet";
 import { fileToIcon } from "@/lib/image";
 import { useVoice } from "./useVoice";
+import { addMessage, deleteChat, getChats, getServerChats, newChat, openChat, startChat, subscribeChats, type Msg } from "@/lib/chats";
 
-type Msg = { role: "user" | "assistant"; content: string; cards?: ActionCard[] };
+const WELCOME: Msg = {
+  role: "assistant",
+  content:
+    "Hi, I'm Pip, your AI co-pilot! 🤖✈️ Tell me what you want to do in plain words. I can swap on NEAR Intents (like near.com), bridge to other chains, buy memecoins on JustHoot, nearly.trade and Ref, pay anyone on any chain, make payment links, launch your own memecoin (📎 to add its picture), add liquidity on Ref, lend & borrow, stake your NEAR, show your portfolio and PnL, and analyze any token you paste. I only suggest — your wallet signs.",
+};
+
+function ago(t: number) {
+  const m = Math.round((Date.now() - t) / 60_000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.round(h / 24);
+  return d < 30 ? `${d}d ago` : new Date(t).toLocaleDateString();
+}
 
 const SUGGESTIONS: Suggestion[] = [
   { label: "🔄 Swap 1 NEAR → USDC", text: "swap 1 near to usdc" },
@@ -47,15 +62,13 @@ type Trending = {
 
 export default function App() {
   const wallet = useWallet();
-  const [msgs, setMsgs] = useState<Msg[]>([
-    {
-      role: "assistant",
-      content:
-        "Hi, I'm Pip, your AI co-pilot! 🤖✈️ Tell me what you want to do in plain words. I can swap on NEAR Intents (like near.com), bridge to other chains, buy memecoins on JustHoot, nearly.trade and Ref, pay anyone on any chain, make payment links, launch your own memecoin (📎 to add its picture), add liquidity on Ref, lend & borrow, stake your NEAR, show your portfolio and PnL, and analyze any token you paste. I only suggest — your wallet signs.",
-    },
-  ]);
+  const saved = useSyncExternalStore(subscribeChats, getChats, getServerChats);
+  const active = saved.chats.find((c) => c.id === saved.activeId);
+  const msgs: Msg[] = [WELCOME, ...(active?.msgs ?? [])];
+  const chatList = [...saved.chats].sort((a, b) => b.updatedAt - a.updatedAt);
   const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null); // the chat waiting for Pip's reply
+  const busy = busyId !== null;
   const [mode, setMode] = useState<"near-ai" | "offline">();
   const policy = useSyncExternalStore(subscribePolicy, getPolicy, getServerPolicy);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -109,10 +122,11 @@ export default function App() {
     });
   }
 
+  const msgCount = active?.msgs.length ?? 0;
   useEffect(() => {
     // braces matter: newer browsers return a Promise from scrollIntoView
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [msgs, busy]);
+  }, [msgCount, busyId, saved.activeId]);
   useEffect(() => {
     fetch("/api/trending", { method: "POST" })
       .then((r) => r.json())
@@ -123,10 +137,12 @@ export default function App() {
   async function send(text: string) {
     const t = text.trim();
     if (!t || busy) return;
-    const next: Msg[] = [...msgs, { role: "user", content: t }];
-    setMsgs(next);
+    const history = active?.msgs ?? [];
+    const chatId = active?.id ?? startChat(t, wallet.accountId);
+    const next: Msg[] = [WELCOME, ...history, { role: "user", content: t }];
+    addMessage(chatId, { role: "user", content: t }, wallet.accountId);
     setInput("");
-    setBusy(true);
+    setBusyId(chatId);
     try {
       const res: ChatResponse = await fetch("/api/chat", {
         method: "POST",
@@ -134,11 +150,11 @@ export default function App() {
         body: JSON.stringify({ messages: next.map(({ role, content }) => ({ role, content })), accountId: wallet.accountId, icon }),
       }).then((r) => r.json());
       setMode(res.mode);
-      setMsgs((m) => [...m, { role: "assistant", content: res.reply, cards: res.cards }]);
+      addMessage(chatId, { role: "assistant", content: res.reply, cards: res.cards });
     } catch {
-      setMsgs((m) => [...m, { role: "assistant", content: "Oops, I lost my map 🙈 Please try again." }]);
+      addMessage(chatId, { role: "assistant", content: "Oops, I lost my map 🙈 Please try again." });
     } finally {
-      setBusy(false);
+      setBusyId(null);
     }
   }
 
@@ -194,13 +210,22 @@ export default function App() {
                     <p className="inline-block rounded-3xl rounded-tl-md bg-surface-2 border-2 border-line px-4 py-2.5 whitespace-pre-wrap break-words"><RichText text={m.content} /></p>
                     {i === 0 && <QuickActions onPick={applySuggestion} disabled={busy} />}
                     {m.cards?.map((c) => (
-                      <ActionCardView key={c.id} card={c} accountId={wallet.accountId} policy={policy} onConnect={wallet.connect} signAndSend={wallet.signAndSend} onAsk={send} />
+                      <ActionCardView
+                        key={c.id}
+                        card={c}
+                        accountId={wallet.accountId}
+                        policy={policy}
+                        onConnect={wallet.connect}
+                        signAndSend={wallet.signAndSend}
+                        onAsk={send}
+                        refreshPrompt={msgs[i - 1]?.role === "user" ? msgs[i - 1].content : undefined}
+                      />
                     ))}
                   </div>
                 </div>
               ),
             )}
-            {busy && (
+            {busyId !== null && busyId === saved.activeId && (
               <div className="flex gap-2.5 items-center">
                 <Pip size={34} mood="think" className="shrink-0" />
                 <p className="typing rounded-3xl bg-surface-2 border-2 border-line px-4 py-2.5 text-ink-soft">
@@ -291,6 +316,59 @@ export default function App() {
         <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label="Menu">
           <button className="absolute inset-0 bg-black/30 backdrop-blur-[2px] cursor-default" aria-label="Close menu" onClick={() => setMenuOpen(false)} />
         <aside id="pip-menu" className="pop absolute right-0 top-0 h-full w-full max-w-[380px] overflow-y-auto bg-bg border-l-2 border-line p-4 pt-20 space-y-4 shadow-2xl">
+          <section className="card p-4" aria-label="Chats">
+            <div className="flex items-center gap-2 mb-2">
+              <h2 className="font-semibold mr-auto">💬 Chats</h2>
+              <button
+                className="btn bg-pink text-white px-3 py-1.5 text-sm"
+                onClick={() => {
+                  newChat();
+                  setMenuOpen(false);
+                  requestAnimationFrame(() => inputRef.current?.focus());
+                }}
+              >
+                ＋ New chat
+              </button>
+            </div>
+            {chatList.length === 0 ? (
+              <p className="text-sm text-ink-soft">Your chats are saved here automatically.</p>
+            ) : (
+              <ul className="space-y-1 max-h-72 overflow-y-auto -mx-1 px-1">
+                {chatList.map((c) => (
+                  <li key={c.id} className={`group flex items-center gap-1 rounded-2xl ${c.id === saved.activeId ? "bg-lav-soft" : "hover:bg-surface-2"}`}>
+                    <button
+                      className="flex-1 min-w-0 text-left px-2 py-1.5"
+                      onClick={() => {
+                        openChat(c.id);
+                        setMenuOpen(false);
+                      }}
+                      aria-current={c.id === saved.activeId ? "true" : undefined}
+                    >
+                      <span className="block text-sm font-semibold truncate">{c.title}</span>
+                      <span className="block text-[11px] text-ink-soft truncate">
+                        {ago(c.updatedAt)} · {(() => {
+                          const n = c.msgs.filter((m) => m.role === "user").length;
+                          return `${n} message${n === 1 ? "" : "s"}`;
+                        })()}
+                        {c.account ? ` · ${c.account}` : ""}
+                      </span>
+                    </button>
+                    <button
+                      className="shrink-0 rounded-full w-8 h-8 grid place-items-center text-ink-soft hover:text-danger hover:bg-surface"
+                      onClick={() => {
+                        if (window.confirm(`Delete the chat “${c.title}”? This can't be undone.`)) deleteChat(c.id);
+                      }}
+                      aria-label={`Delete chat ${c.title}`}
+                      title="Delete chat"
+                    >
+                      🗑
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="text-[11px] text-ink-soft mt-2">Saved in this browser only. Old quotes in saved chats can&apos;t be signed — ask for a fresh one.</p>
+          </section>
           <section className="card p-4 text-sm">
             <h2 className="font-semibold mb-1">🛡️ Pilot Guard</h2>
             <p className="text-ink-soft mb-3">Hard limits checked in your browser before any wallet prompt. Pip can&apos;t change these.</p>

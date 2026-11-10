@@ -218,6 +218,15 @@ Tap **🎤** and talk. The browser's speech recognition (your browser language) 
 
 Pip can be listed on [market.near.ai](https://market.near.ai) so people and other agents can hire it by the job (Agent Economy track). A signed webhook (`/api/agent-market/webhook`: HMAC-SHA256, ±300 s, dedupe) answers 2xx (= started), runs Pip in **report mode** on the brief (treated as data, read-only tools only), and submits a Markdown report with a link to open the plan in Allpilot and sign there. Setup steps and listing copy: [`docs/AGENT_MARKET.md`](docs/AGENT_MARKET.md).
 
+### 💬 Chats that save themselves
+
+Every conversation is saved automatically. Open **☰ → 💬 Chats** to start a **＋ New chat**, switch between earlier chats or delete one. Each chat shows its first message as the title, when you last used it, how many messages it has and which wallet was connected.
+
+- Chats are stored **in your browser only** (localStorage). Nothing about them is sent to a server, and they don't follow you to another device.
+- Up to 40 chats are kept. If the browser's storage fills up, the oldest chats are dropped first.
+- Two open tabs don't overwrite each other's chats.
+- **Old quotes can't be signed.** When a saved chat is reopened, every card that could move money (a sign button or a deposit address) is locked as a "saved quote". Its **Get a fresh quote** button asks Pip the same question again for a new, signable card. Info cards (portfolio, PnL, token analysis, payment links) stay fully usable.
+
 ### 🛡️ Pilot Guard (agent safety)
 
 The AI only proposes. Before any wallet prompt, the browser checks every proposed transaction against rules the user controls, which the model can't change:
@@ -266,6 +275,7 @@ Open http://localhost:3000, then:
 18. Connect a wallet that has traded memes and type `share my pnl`. You should see the image card with **Post on 𝕏**, **Download image** and **Copy link**. Open the link: `/share/pnl/<account>` shows the same card (and that's the X preview).
 19. Open the checkout from step 7 and pick **Base → USDC** (or **Solana → USDC**). After the quote, the card shows **🦊 Pay with MetaMask** (or **👻 Pay with Phantom**), which asks your wallet to send exactly the quoted amount to the deposit address.
 20. Tap **🎤** and say a command, or type in another language (e.g. `lanza un token Gato $GATO en justhoot con 3% de impuesto`). Pip answers in that language.
+21. Type `swap 1 near to usdc`, then reload the page. The chat is still there, and the swap card now says *Saved quote* with **Get a fresh quote** instead of a sign button. Open **☰ → 💬 Chats**, click **＋ New chat**, ask something else, and switch back and forth between the two chats in the list.
 
 **Without `NEAR_AI_API_KEY`** the app runs in *offline brain* mode: a small command parser that handles every typed command above (swap, buy/sell, bridge, pay, payment link, launch, add lp, supply/borrow/repay/withdraw, stake/unstake), so everything stays reproducible. Only the free-form questions (like the **Earn yield** pill) need the key. **With a key** (get one at https://cloud.near.ai), Pip understands free-form chat and calls the same tools.
 
@@ -306,6 +316,7 @@ src/
   app/api/solana-rpc        allow-listed read-only Solana RPC proxy for Phantom payments
   app/api/agent-market      webhook + poll safety net
   components/useVoice.ts    🎤 speech-to-text
+  lib/chats.ts              saved chat sessions (localStorage), old quotes archived on restore
   lib/history.ts            FastNEAR holdings, top holders, tx history (with retries)
   lib/launchpads.ts         known NEAR token factories / launchpads
   lib/intents.ts            NEAR Intents 1Click client
@@ -383,6 +394,7 @@ All built during NEAR HACKATHON (git history, `main`):
 12. Deepest-liquidity routing for all other tokens, with a $50 liquidity floor
 13. Any pairing: hub hops (NEAR/USDC/USDT), all Rhea pool types, two linked classic+DCL swaps, NEAR Intents fallback
 14. Shareable PnL card, every launchpad setting, MetaMask/Phantom checkout, voice & any language, NEAR Agent Market integration
+15. Chat sessions: new chat, saved conversations in the browser, old quotes locked on restore
 
 ## Hackathon compliance notes
 

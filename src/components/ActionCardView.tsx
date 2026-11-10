@@ -39,6 +39,7 @@ export function ActionCardView({
   onConnect,
   signAndSend,
   onAsk,
+  refreshPrompt,
 }: {
   card: ActionCard;
   accountId?: string;
@@ -47,6 +48,8 @@ export function ActionCardView({
   signAndSend: (txs: ActionCard["transactions"]) => Promise<string[]>;
   /** Send a follow-up message to Pip (e.g. "analyze <token>"). */
   onAsk?: (text: string) => void;
+  /** For cards restored from a saved chat: the message that produced it, to fetch a fresh quote. */
+  refreshPrompt?: string;
 }) {
   const [status, setStatus] = useState<Status>("idle");
   const [hashes, setHashes] = useState<string[]>([]);
@@ -61,7 +64,8 @@ export function ActionCardView({
 
   const guard = checkCard(card, policy, accountId, now);
   const external = card.intents?.externalDeposit;
-  const signable = card.transactions.length > 0;
+  const archived = !!card.archived;
+  const signable = card.transactions.length > 0 && !archived;
   const expired = !!card.expiresAt && now > card.expiresAt;
 
   // Track NEAR Intents status after signing (or for external deposits).
@@ -95,6 +99,7 @@ export function ActionCardView({
 
   async function sign() {
     setError(undefined);
+    if (archived) return; // saved quotes are never signable
     const fresh = checkCard(card, policy, accountId, Date.now()); // re-check at click time
     if (!fresh.ok) {
       setError(fresh.reasons.join(" "));
@@ -195,7 +200,18 @@ export function ActionCardView({
         </div>
       )}
 
-      {external && card.intents && (
+      {archived && (
+        <div className="mx-4 mb-3 rounded-2xl bg-surface-2 border-2 border-line px-3 py-2.5 text-xs flex flex-wrap items-center gap-2">
+          <span className="flex-1 min-w-[12rem]">📼 Saved quote from an earlier chat. Prices have moved, so it can&apos;t be signed or paid.</span>
+          {refreshPrompt && onAsk && (
+            <button className="btn bg-pink text-white px-3 py-1.5 text-xs" onClick={() => onAsk(refreshPrompt)}>
+              Get a fresh quote
+            </button>
+          )}
+        </div>
+      )}
+
+      {external && card.intents && !archived && (
         <div className="mx-4 mb-3 rounded-2xl bg-sky-soft px-3 py-3 text-sm">
           <p className="font-semibold mb-1">Send from your {external.chain} wallet</p>
           <p>Send exactly <b>{external.amount} {external.symbol}</b> on <b>{external.chain}</b> to:</p>
