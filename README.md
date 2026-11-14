@@ -2,11 +2,11 @@
 
 > Built at **NEAR HACKATHON** (Nov 2026). Tracks: **Unstoppable DeFi** (`defi`), **Real-World Money** (`realworld`), **Memecoins With Mechanics** (`memecoins`), **Agent Economy** (`agents`), **AI Security & Defense** (`security`), **Privacy & Private AI** (`privacy`).
 
-**🌐 Live demo: https://allpilot.vercel.app** (mainnet, NEAR AI brain on) · Checkout example: [pay 1 USDC](https://allpilot.vercel.app/pay?to=intents.near&amount=1&token=USDC&chain=near&memo=Demo)
+**🌐 Live demo: https://allpilot.vercel.app** (mainnet, NEAR AI brain on) · Store checkout setup: [/checkout-widget](https://allpilot.vercel.app/checkout-widget?merchant=intents.near) · Checkout example: [pay 1 USDC](https://allpilot.vercel.app/pay?to=intents.near&amount=1&token=USDC&chain=near&memo=Demo)
 
 ## The problem
 
-Doing things on NEAR means juggling many apps: near.com / NEAR Intents for swaps and bridges, Rhea (Ref) for trading and liquidity, Rhea Lending for borrowing, separate sites for staking, and launchpads like JustHoot and nearly.trade for memecoins. Each has its own UI, token lists full of copycat contracts, and different transaction formats. Paying someone across chains, or getting paid by a customer who holds a different token, is even harder. Meanwhile anyone can launch a token in seconds, so it's hard to tell a real meme from a copycat or a serial rugger, and normal wallets don't even show what your memes are worth. And handing all of that to an AI is scary unless something stops it from doing the wrong thing.
+Doing things on NEAR means juggling many apps: near.com / NEAR Intents for swaps and bridges, Rhea (Ref) for trading and liquidity, Rhea Lending for borrowing, separate sites for staking, and launchpads like JustHoot and nearly.trade for memecoins. Each has its own UI, token lists full of copycat contracts, and different transaction formats. Paying someone across chains, or getting paid by a customer who holds a different token, is even harder, and a small shop has no simple way to take crypto from whatever wallet its customers use. Meanwhile anyone can launch a token in seconds, so it's hard to tell a real meme from a copycat or a serial rugger, and normal wallets don't even show what your memes are worth. And handing all of that to an AI is scary unless something stops it from doing the wrong thing.
 
 ## What Allpilot does
 
@@ -29,7 +29,8 @@ You chat with **Pip**, a little robot pilot in an aviator cap, in plain words. P
 | `pay alice.near 5 usdc` | Same token on NEAR: one direct `ft_transfer` to the recipient, no fee | Direct |
 | `pay alice.near 5 usdc with near` | Recipient gets **exactly** 5 USDC; you pay in NEAR (exact-output quote) | NEAR Intents |
 | `send 5 usdc to 0xAbc… on base` | Pay someone on another chain from your NEAR wallet | NEAR Intents |
-| `payment link 10 usdc for Order 42` | Shareable checkout link + embeddable widget + "Pay with Intents" button | NEAR Intents |
+| `payment link 10 usdc for Order 42` | Fixed-amount invoice: shareable checkout link + embeddable widget + "Pay with Intents" button | NEAR Intents |
+| `set up a crypto checkout for my store` (+ your NEAR account, or the connected wallet) | **Store checkout** for any website: code to paste once; each customer pays their **cart total** with any crypto and **NEAR lands in your wallet**; sends you to your setup page to finish | NEAR Intents + `checkout.js` |
 | 📎 + `launch Pip Coin $PIP on hoot` | Launches a new memecoin with your uploaded picture: token + Rhea DCL pool in one tx | JustHoot `launch_meme` |
 | `launch Robo $ROBO on nearly paired with USDC, 2% buy tax, 3% sell tax, half burned half to holders, fees to holders` | **Every launchpad setting**: pair, first buy, taxes, fee/tax split, fee mode, fee recipient, payouts, description & links | JustHoot / nearly.trade |
 | `share my pnl` | A cute PnL image card (Pip + total + ROI + best trade) with **Post on 𝕏**, download and a share link | `/api/pnl-card` (next/og) |
@@ -41,11 +42,12 @@ You chat with **Pip**, a little robot pilot in an aviator cap, in plain words. P
 | `repay all usdc` · `withdraw all usdc from lending` | Repays debt from your wallet (with a tiny interest buffer) or withdraws supplied tokens, health-checked | Rhea Lending |
 | `stake 5 near with linear` (or `rnear`, `stnear`) | Liquid staking via `deposit_and_stake`; shows the live share price and tokens you'll get | LiNEAR / Rhea rNEAR / Meta Pool |
 | `stake 3 near on astro-stakers.poolv1.near` | Native staking with a validator (fee shown, high fees flagged) | Validator pool |
+| **☰ → 💬 Chats** | New chat, switch or delete chats; conversations save in your browser (old quotes reopen locked, with **Get a fresh quote**) | — |
 | `unstake all linear` · `unstake 1 near from <pool>` | Liquid: instant swap back to NEAR on Rhea (spread vs fair value shown). Native: `unstake`, then `withdraw my unstaked near from <pool>` after ~2–3 days | Rhea / validator |
 
 ### How NEAR fits in
 
-- **NEAR Intents (1Click API)** does swaps and cross-chain bridging (BTC, ETH, SOL, Base, Arbitrum and 20+ chains) with no custodian. It's the same engine near.com uses.
+- **NEAR Intents (1Click API)** does swaps and cross-chain bridging (BTC, ETH, SOL, Base, Arbitrum and 20+ chains) with no custodian. It's the same engine near.com uses. It also settles every payment: exact-output quotes mean a payee or store gets exactly the amount, whatever the payer holds.
 - **Rhea DCL** (`dclv2.ref-labs.near`): JustHoot (`*.justhoot.near`) and nearly.trade (`*.nearlytrade.near`) launch every memecoin as one-sided liquidity in a DCL pool. Allpilot reads `list_pools` / `quote` directly from the contract, so any new launch is buyable right away.
 - **Rhea classic AMM** (`v2.ref-finance.near`) via the public smart router for swaps, and `register_tokens` → deposit → `add_liquidity` for providing liquidity.
 - **Launchpad factories**: `v2-launchpad.justhoot.near` (`launch_meme`) and `nearlytrade.near` (`launch`), each minting a NEP-141 token and opening its Rhea DCL pool in one transaction, priced live with `get_launch_deposit` / `quote_launch`.
@@ -55,7 +57,7 @@ You chat with **Pip**, a little robot pilot in an aviator cap, in plain words. P
 - **NEAR AI Cloud** (OpenAI-compatible, private inference) is the chat brain, with tool calling. Clear commands (`buy …`, `swap …`, `pay …`, `launch … on …`, `add lp …`, `supply …`, `borrow …`, `stake … with …`, a pasted address, `my portfolio`, `my pnl`) take an instant path that skips the LLM (~1 s). Every network call has a timeout, and if NEAR AI is unavailable Pip falls back to the command parser.
 - **HOT's NEAR Connect** handles wallet connection: HOT, Meteor, Intear, Ledger, MyNearWallet, OKX, NEAR Mobile, Trezu, Nightly, Hana, Ethereum wallets (MetaMask etc. via EVM-on-NEAR) and NEAR CLI. The wallet list ships with the app (`src/lib/wallet-manifest.json`) as a fallback, so the picker is never empty if GitHub is slow or blocked.
 
-### 💌 Pay with Intents (universal checkout)
+### 💌 Pay with Intents (payments & invoice links)
 
 A merchant (or friend) asks for an **exact amount of one token on one chain**: "10 USDC to shop.near". The payer pays with **whatever they hold, on whatever chain**.
 
@@ -275,7 +277,7 @@ npm run dev
 
 Open http://localhost:3000, then:
 
-0. The page shows the logo, your wallet button and a **☰** button; everything else (Pilot Guard settings, "What Pip can do", Meme garden, how it works) lives in the ☰ menu, which opens and closes on click (or Esc). Under Pip's welcome message you'll see quick-action pills (**Launch a token**, **Portfolio**, **Earn yield**, **Swap**, **Pay a friend**, **More**). Click **More** to reveal the rest.
+0. The page shows the logo, your wallet button and a **☰** button; everything else (💬 Chats, Pilot Guard settings, "What Pip can do", Meme garden, how it works) lives in the ☰ menu, which opens and closes on click (or Esc). Under Pip's welcome message you'll see quick-action pills (**Launch a token**, **Portfolio**, **Earn yield**, **Swap**, **Pay a friend**, **More**). Click **More** to reveal the rest.
 1. Type `buy 0.1 near of hoot`. You should see a card with the verified contract `hoot-8ecf65.launchpad.justhoot.near`, a live quote, **`Route: ✅ official JustHoot launch pool · NEAR → HOOT`** with official pool `hoot-8ecf65.launchpad.justhoot.near|wrap.near|10000` (HOOT has 24 pools; only this one is used), and a warning about lookalike tokens.
 2. Click the **Swap** pill (sends `swap 1 near to usdc`). You should see a NEAR Intents quote (est. output, minimum, ~time).
 3. Type `bridge 5 usdc from near to base 0x2527D02599Ba641c19FEa793cD0F167589a0f10D`. You should see a bridge card with the recipient filled in.
@@ -297,9 +299,9 @@ Open http://localhost:3000, then:
 19. Open the checkout from step 7 and pick **Base → USDC** (or **Solana → USDC**). After the quote, the card shows **🦊 Pay with MetaMask** (or **👻 Pay with Phantom**), which asks your wallet to send exactly the quoted amount to the deposit address.
 20. Tap **🎤** and say a command, or type in another language (e.g. `lanza un token Gato $GATO en justhoot con 3% de impuesto`). Pip answers in that language.
 21. Type `swap 1 near to usdc`, then reload the page. The chat is still there, and the swap card now says *Saved quote* with **Get a fresh quote** instead of a sign button. Open **☰ → 💬 Chats**, click **＋ New chat**, ask something else, and switch back and forth between the two chats in the list.
-22. Type `set up a crypto checkout for my store, pay to intents.near` (or connect a wallet and say `create a checkout widget for my website`). You should see a 🛒 card with the website code (`data-merchant="intents.near"`, no amount in it) and a setup-page link. Try `accept crypto on my shop, send to 0x2527D02599Ba641c19FEa793cD0F167589a0f10D`: it's refused, because merchants receive in NEAR. Open the setup page, enter a sample cart total of `37.50` and click the button. The popup shows `$37.50 = … NEAR at today's price`. Pick **Base → USDC**, enter an address and **Get quote**: the card says the merchant gets exactly that NEAR and shows **🦊 Pay with MetaMask**. `curl "https://allpilot.vercel.app/api/pay/verify?deposit=<deposit address>"` answers `paid: false` until it's paid.
+22. Type `set up a crypto checkout for my store, pay to intents.near` (or connect a wallet and say `create a checkout widget for my website`). You should see a 🛒 card that leads with **👉 Next: finish setup on your setup page** and an **Open my setup page** button, then the website code (`data-merchant="intents.near"` and an empty `<button data-allpilot-checkout>`, with no amount or order built in). The setup page opens with a *Finish setting up* checklist at 1 of 5. Try `accept crypto on my shop, send to 0x2527D02599Ba641c19FEa793cD0F167589a0f10D`: it's refused, because merchants receive in NEAR. Open the setup page, enter a sample cart total of `37.50` and click the button. The popup shows `$37.50 = … NEAR at today's price`. Pick **Base → USDC**, enter an address and **Get quote**: the card says the merchant gets exactly that NEAR and shows **🦊 Pay with MetaMask**. `curl "https://allpilot.vercel.app/api/pay/verify?deposit=<deposit address>"` answers `paid: false` until it's paid.
 
-**Without `NEAR_AI_API_KEY`** the app runs in *offline brain* mode: a small command parser that handles every typed command above (swap, buy/sell, bridge, pay, payment link, launch, add lp, supply/borrow/repay/withdraw, stake/unstake), so everything stays reproducible. Only the free-form questions (like the **Earn yield** pill) need the key. **With a key** (get one at https://cloud.near.ai), Pip understands free-form chat and calls the same tools.
+**Without `NEAR_AI_API_KEY`** the app runs in *offline brain* mode: a small command parser that handles every typed command above (swap, buy/sell, bridge, pay, payment link, store checkout setup, launch, add lp, supply/borrow/repay/withdraw, stake/unstake), so everything stays reproducible. Only the free-form questions (like the **Earn yield** pill) need the key. **With a key** (get one at https://cloud.near.ai), Pip understands free-form chat and calls the same tools.
 
 Read-only smoke test of **every feature** (live mainnet quotes, builds the unsigned transactions, runs each through the Pilot Guard, signs nothing):
 
@@ -307,22 +309,24 @@ Read-only smoke test of **every feature** (live mainnet quotes, builds the unsig
 npm run smoke                      # or: npm run smoke -- your-account.near
 ```
 
-Expected: `26 passed, 0 failed. Nothing was signed or sent.`
+Expected: `27 passed, 0 failed. Nothing was signed or sent.`
 
 ## Architecture
 
 ```
 src/
   app/page.tsx              chat app (renders components/App)
-  app/pay/page.tsx          checkout page for payment links (?embed=1 for the iframe widget)
+  app/pay/page.tsx          checkout page (payment links, store checkout popup; ?usd= converts a cart total to NEAR)
+  app/checkout-widget       store checkout setup page: NEAR account, live button, code, platform examples, checklist
   app/api/chat              POST: messages (+ wallet, + token picture) → agent → action cards
   app/api/pay/assets        POST: every token/chain a payer can use (from 1Click)
   app/api/pay/quote         POST: exact-output payment quote → action card
   app/api/intents-status    POST: 1Click status (+ optional deposit tx submit)
+  app/api/pay/verify        GET: was an order paid? (1Click deposit status or the NEAR tx), CORS open for stores
   app/api/trending          POST: verified memes + fresh nearly.trade launches
   lib/agent.ts              NEAR AI Cloud tool-calling loop, system prompt, instant/offline command parser
   lib/actions.ts            swap / bridge / memeTrade / trending / balances
-  lib/pay.ts                pay / paymentLink / payableAssets (Pay with Intents)
+  lib/pay.ts                pay / paymentLink / merchantCheckout / payableAssets (Pay with Intents)
   lib/launch.ts             launchToken on JustHoot / nearly.trade (live cost quotes)
   lib/liquidity.ts          addLiquidity on Rhea classic pools
   lib/lending.ts            supply / borrow / repay / withdraw on Rhea Lending + health factor
@@ -339,9 +343,8 @@ src/
   app/api/agent-market      webhook + poll safety net
   components/useVoice.ts    🎤 speech-to-text
   lib/chats.ts              saved chat sessions (localStorage), old quotes archived on restore
-  public/checkout.js        drop-in checkout button + popup for any website (no dependencies)
-  lib/verifyPayment.ts      /api/pay/verify: was it paid? (1Click status or the NEAR tx)
-  app/checkout-widget       widget setup page with live preview
+  public/checkout.js        store checkout for any website: button + popup, cart total read at click, paid events (no dependencies)
+  lib/verifyPayment.ts      payment checks behind /api/pay/verify
   lib/history.ts            FastNEAR holdings, top holders, tx history (with retries)
   lib/launchpads.ts         known NEAR token factories / launchpads
   lib/intents.ts            NEAR Intents 1Click client
@@ -355,10 +358,11 @@ src/
   lib/guard.ts              Pilot Guard (runs in the browser before every wallet prompt)
   lib/image.ts              in-browser image → small on-chain token picture
   lib/wallet-manifest.json  bundled NEAR Connect wallet list (fallback)
-  components/App.tsx        chat UI, 📎 upload, header (logo · wallet · ☰), ☰ menu with Guard settings, skills, meme garden
+  components/App.tsx        chat UI, 📎 upload, header (logo · wallet · ☰), ☰ menu with saved chats, Guard settings, skills, meme garden
   components/QuickActions   welcome-message pills (+ More/Less)
   components/ActionCardView card UI, signing, Intents status tracking, checkout snippets
-  components/Checkout.tsx   payment-link checkout
+  components/Checkout.tsx   checkout UI (any chain/token in, exact amount out; tells the store's page what happened)
+  components/WidgetBuilder  store checkout setup page
   components/useWallet.ts   NEAR Connect wallet hook
   components/Pip.tsx        Pip, the robot-pilot logo/mascot (app/icon.svg = favicon) · RichText.tsx: tiny safe markdown
 scripts/smoke.ts            read-only end-to-end check of every feature
@@ -394,7 +398,9 @@ Payment links automatically use the deployment's address (or set `PUBLIC_SITE_UR
 - Adding liquidity supports Rhea **classic** pools, not concentrated (DCL) pools.
 - JustHoot keeps token descriptions/links off-chain, so add them on justhoot.fun after launching. Token pictures must fit ~7 KB (JustHoot) / 16 KB (nearly.trade); Allpilot shrinks them automatically.
 - Liquid-staking exits use an instant Rhea swap (small spread shown on the card). The protocols' delayed 1:1 unstake isn't wired up yet.
-- Some wallets don't open inside iframes, so the embedded checkout widget works best when paying from another chain (deposit address / MetaMask / Phantom) or opened as a full page.
+- Some wallets don't open inside iframes, so the embedded checkout widget works best when paying from another chain (deposit address / MetaMask / Phantom) or opened as a full page. The store checkout popup has an "Open in new tab" link for this.
+- Store checkout: the cart total comes from the store's web page, so a customer could edit it in their browser. Stores should confirm each order with `/api/pay/verify` before shipping. Merchants receive NEAR as wNEAR (wrapped NEAR, 1:1) when customers pay with other crypto. Quotes from Base (USDC/MetaMask) and Solana (SOL/Phantom) were tested live; a completed customer payment through the store checkout has not been tested yet.
+- Saved chats live in one browser (localStorage), so they don't follow you to another device.
 - Voice input needs a browser with the Web Speech API (Chrome, Edge, Safari); the 🎤 button hides elsewhere. The Agent Market listing itself must be created by the owner on market.near.ai (account, token and webhook secret); until those env vars are set, the webhook answers 503.
 - Prices, APRs and health factors come from live on-chain/Rhea data at quote time and can move before you sign.
 - Token analysis gives risk *signals*, not verdicts. The creator is the signer of the token's launch transaction (or the launchpad's own record). If a wallet relayer signed it, or the token predates FastNEAR's indexed history, the creator/age shows as unknown. "Tokens launched" is exact for nearly.trade and otherwise counted from the creator's last 100 signed transactions. Top holders come from FastNEAR's top-100 list.
@@ -420,7 +426,7 @@ All built during NEAR HACKATHON (git history, `main`):
 13. Any pairing: hub hops (NEAR/USDC/USDT), all Rhea pool types, two linked classic+DCL swaps, NEAR Intents fallback
 14. Shareable PnL card, every launchpad setting, MetaMask/Phantom checkout, voice & any language, NEAR Agent Market integration
 15. Chat sessions: new chat, saved conversations in the browser, old quotes locked on restore
-16. Universal checkout for any store: the merchant sets a NEAR account (connected or typed), each customer pays the cart total with any crypto, NEAR lands in the merchant's wallet; `checkout.js`, payment events, `/api/pay/verify`, setup page
+16. Universal checkout for any store: the merchant sets a NEAR account (connected or typed), each customer pays the cart total with any crypto, NEAR lands in the merchant's wallet; `checkout.js`, payment events, `/api/pay/verify`; Pip sends merchants to a setup page with a finish-setting-up checklist
 
 ## Hackathon compliance notes
 

@@ -6,7 +6,7 @@
 
 import type { ActionCard } from "../src/lib/cards";
 import { bridge, memeTrade, swap, trendingMemes } from "../src/lib/actions";
-import { pay, paymentLink } from "../src/lib/pay";
+import { merchantCheckout, pay, paymentLink } from "../src/lib/pay";
 import { launchToken } from "../src/lib/launch";
 import { addLiquidity } from "../src/lib/liquidity";
 import { lendingOverview, supply } from "../src/lib/lending";
@@ -65,6 +65,7 @@ async function run(name: string, f: () => Promise<ActionCard>) {
   await run("launch JustHoot · USDC pair · 3% tax · 50/25/25 split · hosted description", () => launchToken({ launchpad: "justhoot", name: "Smoke Tax", symbol: "SMKT", pair: "USDC", taxPct: 3, split: { creator: 50, burn: 25, holders: 25 }, description: "smoke test", accountId: acct, baseUrl: "https://allpilot.vercel.app" }));
   await run("launch nearly · RHEA pair · 2%/3% tax · fees to holders · fee_to", () => launchToken({ launchpad: "nearly", name: "Smoke Tax", symbol: "SMKT", pair: "RHEA", buyTaxPct: 2, sellTaxPct: 3, split: { creator: 0, burn: 50, holders: 50 }, feeMode: "holders", accountId: acct }));
   await run("share PnL card (image + X link)", () => sharePnlCard("wowzer.near", "https://allpilot.vercel.app"));
+  await run("store checkout setup (merchant NEAR account → website code)", () => merchantCheckout({ merchant: "intents.near", baseUrl: "https://allpilot.vercel.app" }));
   await run("launch token (nearly.trade)", () => launchToken({ launchpad: "nearly", name: "Smoke Test", symbol: "SMOKE", description: "test", icon: TEST_ICON, accountId: acct }));
   await run("add liquidity (Rhea)", () => addLiquidity({ tokenA: "near", tokenB: "usdc", amountA: "1", accountId: acct }));
   await run("lend (supply USDC)", () => supply({ token: "usdc", amount: "10", accountId: acct }));
