@@ -275,7 +275,7 @@ export async function merchantCheckout(m: MerchantInput): Promise<ActionCard> {
     transactions: [],
     nearSpend: "0",
     checkout: { url, iframe, button, widget, builder, merchant: true },
-    links: [{ label: "Setup page & live preview", href: builder }],
+    links: [{ label: "Open my setup page", href: builder }],
   };
 }
 

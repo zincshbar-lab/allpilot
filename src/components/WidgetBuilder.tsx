@@ -11,7 +11,7 @@ const NEAR_ACCOUNT = /^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/;
 const isNearAccount = (a: string) => a.length >= 2 && a.length <= 64 && NEAR_ACCOUNT.test(a) && (a.includes(".") || /^[0-9a-f]{64}$/.test(a));
 const esc = (v: string) => v.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 
-function Code({ code, label }: { code: string; label: string }) {
+function Code({ code, label, onCopy }: { code: string; label: string; onCopy?: () => void }) {
   const [copied, setCopied] = useState(false);
   return (
     <div>
@@ -21,6 +21,7 @@ function Code({ code, label }: { code: string; label: string }) {
           className="btn shrink-0 bg-surface border-2 border-line px-3 py-1 text-xs"
           onClick={() => {
             navigator.clipboard?.writeText(code);
+            onCopy?.();
             setCopied(true);
             setTimeout(() => setCopied(false), 1500);
           }}
@@ -42,6 +43,8 @@ export default function WidgetBuilder() {
   const [cart, setCart] = useState("49.50");
   const [origin, setOrigin] = useState("https://allpilot.vercel.app");
   const [log, setLog] = useState<string[]>([]);
+  const [done, setDone] = useState({ code: false, total: false, tested: false, verify: false });
+  const mark = (k: keyof typeof done) => setDone((d) => (d[k] ? d : { ...d, [k]: true }));
 
   useEffect(() => {
     const t = setTimeout(() => setOrigin(window.location.origin), 0);
@@ -49,6 +52,7 @@ export default function WidgetBuilder() {
       const d = (e as CustomEvent).detail ?? {};
       const bits = [e.type.replace("allpilot:", ""), d.status, d.amountNear && `${d.amountNear} NEAR`, d.depositAddress && `deposit ${String(d.depositAddress).slice(0, 10)}…`, d.txHash && `tx ${String(d.txHash).slice(0, 8)}…`, d.error];
       setLog((l) => [bits.filter(Boolean).join(" · "), ...l].slice(0, 8));
+      if (d.status === "ready") setDone((x) => (x.tested ? x : { ...x, tested: true }));
     };
     document.addEventListener("allpilot:status", onEv);
     document.addEventListener("allpilot:paid", onEv);
@@ -121,8 +125,43 @@ curl "${origin}/api/pay/verify?tx=<txHash>&sender=<customer.near>"
         </p>
       </section>
 
+      {(() => {
+        const steps: { id: string; label: string; ok: boolean }[] = [
+          { id: "account", label: "Set the NEAR account where money lands", ok: okMerchant },
+          { id: "try", label: "Test the button like a customer", ok: done.tested },
+          { id: "code", label: "Copy your checkout code into your site", ok: done.code },
+          { id: "total", label: "Make your site fill in each cart total", ok: done.total },
+          { id: "paid", label: "Confirm payments before you ship", ok: done.verify },
+        ];
+        const n = steps.filter((x) => x.ok).length;
+        return (
+          <section className="card p-5 border-pink" aria-label="Setup checklist">
+            <div className="flex items-center gap-3 mb-3">
+              <h2 className="font-semibold mr-auto">✅ Finish setting up your checkout</h2>
+              <span className="text-xs font-semibold rounded-full bg-pink-soft px-3 py-1">
+                {n} of {steps.length} done
+              </span>
+            </div>
+            <ol className="grid sm:grid-cols-5 gap-2 text-xs">
+              {steps.map((x, i) => (
+                <li key={x.id}>
+                  <a href={`#${x.id}`} className={`block h-full rounded-2xl border-2 px-3 py-2 ${x.ok ? "border-mint bg-mint-soft" : "border-line bg-surface-2 hover:border-pink"}`}>
+                    <span className="font-semibold">{x.ok ? "✓" : i + 1}.</span> {x.label}
+                  </a>
+                </li>
+              ))}
+            </ol>
+            {n < steps.length && (
+              <p className="text-[11px] text-ink-soft mt-3">
+                Your checkout only takes payments once your site fills in the cart total (step 4). Work through the steps below; each one ticks off as you go.
+              </p>
+            )}
+          </section>
+        );
+      })()}
+
       <div className="grid lg:grid-cols-2 gap-5">
-        <section className="card p-5 space-y-3 text-sm">
+        <section id="account" className="card p-5 space-y-3 text-sm scroll-mt-4">
           <h2 className="font-semibold">1. Where the money lands</h2>
           <label className="block space-y-1">
             <span className="text-xs text-ink-soft">Your NEAR account</span>
@@ -156,7 +195,7 @@ curl "${origin}/api/pay/verify?tx=<txHash>&sender=<customer.near>"
             </select>
           </label>
 
-          <h2 className="font-semibold pt-2">2. Try it like a customer</h2>
+          <h2 id="try" className="font-semibold pt-2 scroll-mt-4">2. Try it like a customer</h2>
           <label className="block space-y-1">
             <span className="text-xs text-ink-soft">A sample cart total ({unit})</span>
             <input value={cart} onChange={(e) => setCart(e.target.value.replace(/[^\d.]/g, ""))} inputMode="decimal" className="w-40 rounded-xl border-2 border-line bg-surface-2 px-3 py-2" />
@@ -182,24 +221,25 @@ curl "${origin}/api/pay/verify?tx=<txHash>&sender=<customer.near>"
           )}
         </section>
 
-        <section className="card p-5 space-y-4">
+        <section id="code" className="card p-5 space-y-4 scroll-mt-4">
           <h2 className="font-semibold text-sm">3. Paste into your site</h2>
-          <Code label="Your checkout code" code={snippet} />
+          <Code label="Your checkout code" code={snippet} onCopy={() => mark("code")} />
           <p className="text-[11px] text-ink-soft">
             The button reads the cart total when it&apos;s clicked, so the same code works for every order. Leave the button empty for the ✨ styled button, or put your own text inside it.
           </p>
         </section>
       </div>
 
-      <section className="card p-5 space-y-4">
+      <section id="total" className="card p-5 space-y-4 scroll-mt-4">
         <h2 className="font-semibold">4. Fill in the cart total on your platform</h2>
-        <Code label="Shopify, WooCommerce, no-code or your own JS" code={platforms} />
+        <p className="text-xs text-ink-soft">This is the step that makes it work: the button needs each customer&apos;s cart total. Pick the line for your platform and use it as your button.</p>
+        <Code label="Shopify, WooCommerce, no-code or your own JS" code={platforms} onCopy={() => mark("total")} />
       </section>
 
-      <section className="card p-5 space-y-4">
+      <section id="paid" className="card p-5 space-y-4 scroll-mt-4">
         <h2 className="font-semibold">5. Know when it&apos;s paid</h2>
-        <Code label="Listen in the browser" code={events} />
-        <Code label="Confirm on your server before you ship (the total comes from your web page, so check what actually arrived)" code={verify} />
+        <Code label="Listen in the browser" code={events} onCopy={() => mark("verify")} />
+        <Code label="Confirm on your server before you ship (the total comes from your web page, so check what actually arrived)" code={verify} onCopy={() => mark("verify")} />
       </section>
 
       <section className="card p-5 text-sm text-ink-soft space-y-1.5">

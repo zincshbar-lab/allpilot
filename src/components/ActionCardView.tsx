@@ -331,13 +331,20 @@ function CheckoutSnippets({ checkout }: { checkout: NonNullable<ActionCard["chec
     <div className="mx-4 mb-3 rounded-2xl bg-pink-soft px-3 py-3 space-y-3">
       {checkout.merchant && checkout.widget && (
         <>
-          <CopyRow label="🛒 Paste into your website once. For each order your store sets data-amount to the cart total (data-ref with the order id is optional)" value={checkout.widget} />
-          <CopyRow label="No-code? Add the order total to the end of this link" value={checkout.url} />
           {checkout.builder && (
-            <a href={checkout.builder} target="_blank" rel="noreferrer" className="inline-block text-xs underline">
-              Setup page: live preview, Shopify/WordPress tips & how to confirm payments ↗
-            </a>
+            <div className="rounded-2xl bg-surface border-2 border-pink px-3 py-3 space-y-2">
+              <p className="text-sm font-semibold">👉 Next: finish setup on your setup page</p>
+              <p className="text-xs text-ink-soft">
+                It shows you how to put each customer&apos;s cart total into the button on your platform (Shopify, WooCommerce, no-code or your own code), lets you test the real
+                button, and shows how to confirm payments before you ship. The code below won&apos;t take payments until your site sets the cart total.
+              </p>
+              <a href={checkout.builder} target="_blank" rel="noreferrer" className="btn inline-block bg-pink text-white px-4 py-2 text-sm">
+                Open my setup page ↗
+              </a>
+            </div>
           )}
+          <CopyRow label="🛒 Your checkout code (the setup page walks you through it)" value={checkout.widget} />
+          <CopyRow label="No-code? Add the order total to the end of this link" value={checkout.url} />
         </>
       )}
       {!checkout.merchant && <CopyRow label="Share this link — the payer picks any token on any chain" value={checkout.url} />}

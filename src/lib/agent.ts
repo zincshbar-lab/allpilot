@@ -40,7 +40,7 @@ Rules:
 - Formatting: plain short lines only. **bold** and \`code\` are fine; never use tables, headings (#) or long lists — the chat bubble can't render them.
 - For payments, the recipient gets EXACTLY the amount; the payer may pay in another token/chain. Always repeat the recipient so the user can double-check it. Never guess a recipient address.
 - A payment link with no recipient goes to the connected wallet; if none is connected, ask who should receive.
-- Store checkout (setup_checkout): the merchant only gives a NEAR account, or uses the connected wallet. Merchants receive NEAR, so never accept an EVM or Solana address for the merchant; explain that customers can still pay from any chain. The amount is each customer's cart total, filled in by the website, not set by the merchant.
+- Store checkout (setup_checkout): the merchant only gives a NEAR account, or uses the connected wallet. Merchants receive NEAR, so never accept an EVM or Solana address for the merchant; explain that customers can still pay from any chain. The amount is each customer's cart total, filled in by the website, not set by the merchant. Always end by telling the merchant to open their setup page (the card's button) to finish setting it up.
 - Token launches: you need launchpad, name and ticker. If the launchpad isn't given, ask which one, briefly comparing them:
   JustHoot = opens at a $5,000 value, ~0.06–0.1 NEAR cost, ticker 2–10 chars, description/links added on its site later;
   nearly.trade = ~0.2 NEAR cost, ticker 1–12 chars, description + website/twitter/telegram stored on-chain.
@@ -399,7 +399,11 @@ async function runTool(name: string, args: Record<string, unknown>, ctx: Ctx): P
       if (!merchant) return { error: "Which NEAR account should receive the payments? Connect your wallet, or type it (like yourshop.near)." };
       const c = await merchantCheckout({ merchant, currency: args.currency === "NEAR" ? "NEAR" : "USD", baseUrl: ctx.baseUrl ?? "http://localhost:3000" });
       ctx.cards.push(c);
-      return { ok: true, merchant: c.lines[0].value, note: "Card shows the website code, a no-code link and the setup page. Merchant receives NEAR; customers pay with any crypto." };
+      return {
+        ok: true,
+        merchant: c.lines[0].value,
+        note: "Card shows the website code and an 'Open my setup page' button. Tell the merchant the next step is to open the setup page to finish: it shows how to pass each cart total for their platform, lets them test the real button and shows how to confirm payments. Merchant receives NEAR; customers pay with any crypto.",
+      };
     }
     case "create_payment_link": {
       const to = args.to ? String(args.to) : ctx.accountId;
@@ -658,7 +662,7 @@ export async function offline(messages: ChatMessage[], ctx: Ctx, opts?: { trades
       if (evm && !acct) return reply("Merchants receive in NEAR, so I need a NEAR account (like yourshop.near) rather than an 0x address. Your customers can still pay from Ethereum, Base, Solana, BTC and more 🌍");
       const out = await runTool("setup_checkout", { merchant: acct, currency: /\bin\s+near\b|priced?\s+in\s+near/.test(text) ? "NEAR" : "USD" }, ctx);
       if ((out as { error?: string }).error) return reply((out as { error: string }).error);
-      return reply("Your store checkout is ready 🛒 Paste the code into your site once. Each customer pays their cart total with any crypto, and NEAR lands in your wallet.");
+      return reply("Your store checkout is ready 🛒 Next step: tap **Open my setup page** on the card to finish. It shows how to put each customer's cart total into the button on your platform, lets you test it, and shows how to confirm payments. Customers pay with any crypto, and NEAR lands in your wallet.");
     }
     // payment link 5 usdc [to alice.near] [on base] [for order 42]
     if ((m = text.match(new RegExp(`(?:payment|pay|checkout|invoice)\\s+(?:link|button|widget)\\s+(?:for\\s+)?${NUM}\\s+${TOK}(?:\\s+to\\s+([^\\s]+))?(?:\\s+on\\s+([a-z]+))?(?:\\s+for\\s+(.+))?$`)))) {
