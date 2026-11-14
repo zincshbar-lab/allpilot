@@ -206,6 +206,12 @@ export async function paymentLink(l: LinkInput): Promise<ActionCard> {
   const url = `${l.baseUrl}/pay?${qs}`;
   const iframe = `<iframe src="${url}&embed=1" width="380" height="560" style="border:0;border-radius:24px" title="Pay with Intents"></iframe>`;
   const button = `<a href="${url}" target="_blank" rel="noopener" style="display:inline-block;padding:12px 20px;border-radius:999px;background:#ff8fb1;color:#fff;font-weight:600;text-decoration:none;font-family:sans-serif">Pay ${l.amount} ${sym} with Intents ✨</a>`;
+  const attr = (v: string) => v.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+  // drop-in widget: one script tag + a button; opens the checkout in a popup on the shop's own page
+  const widget =
+    `<script src="${l.baseUrl}/checkout.js" defer></script>\n` +
+    `<button data-allpilot-checkout data-to="${attr(l.to)}" data-amount="${attr(l.amount)}" data-token="${attr(sym)}" data-chain="${chain}"${l.memo ? ` data-memo="${attr(l.memo.slice(0, 120))}"` : ""}></button>`;
+  const builder = `${l.baseUrl}/checkout-widget?${qs}`;
   return {
     id: uid(),
     kind: "link",
@@ -220,8 +226,55 @@ export async function paymentLink(l: LinkInput): Promise<ActionCard> {
     warnings: [],
     transactions: [],
     nearSpend: "0",
-    checkout: { url, iframe, button },
-    links: [{ label: "Open checkout", href: url }],
+    checkout: { url, iframe, button, widget, builder },
+    links: [{ label: "Open checkout", href: url }, { label: "Widget setup & live preview", href: builder }],
+  };
+}
+
+// ---------------------------------------------------------------- merchant checkout (any store)
+
+const NEAR_ACCOUNT = /^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/;
+export const isNearAccount = (a: string) => a.length >= 2 && a.length <= 64 && NEAR_ACCOUNT.test(a) && (a.includes(".") || /^[0-9a-f]{64}$/.test(a));
+
+export type MerchantInput = { merchant: string; currency?: "USD" | "NEAR"; baseUrl: string };
+
+/** A store's crypto checkout: the merchant sets only a NEAR account; each customer pays the cart total
+ *  with any crypto NEAR Intents supports, and the merchant receives NEAR. */
+export async function merchantCheckout(m: MerchantInput): Promise<ActionCard> {
+  const to = m.merchant.trim().toLowerCase();
+  if (!isNearAccount(to)) {
+    throw new Error(
+      `Merchants receive in NEAR, so I need a NEAR account (like yourshop.near), not ${m.merchant}. Your customers can still pay from any chain: Ethereum, Base, Solana, BTC and more.`,
+    );
+  }
+  await validateRecipient(to, "near");
+  const currency = m.currency === "NEAR" ? "NEAR" : "USD";
+  const attr = (v: string) => v.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+  const widget =
+    `<script src="${m.baseUrl}/checkout.js" data-merchant="${attr(to)}"${currency === "NEAR" ? ' data-currency="NEAR"' : ""} defer></script>\n\n` +
+    `<!-- at checkout: put the cart total in data-amount${currency === "USD" ? " (USD)" : " (NEAR)"} and your order id in data-ref -->\n` +
+    `<button data-allpilot-checkout data-amount="49.50" data-ref="ORDER-1042"></button>`;
+  const amountKey = currency === "USD" ? "usd" : "amount";
+  const url = `${m.baseUrl}/pay?to=${encodeURIComponent(to)}&token=NEAR&chain=near&${amountKey}=49.50&memo=Order%201042`;
+  const iframe = `<iframe src="${url}&embed=1" width="380" height="600" style="border:0;border-radius:24px" title="Pay with Intents"></iframe>`;
+  const button = `<a href="${url}" target="_blank" rel="noopener" style="display:inline-block;padding:12px 20px;border-radius:999px;background:#ff8fb1;color:#fff;font-weight:600;text-decoration:none;font-family:sans-serif">Pay with crypto ✨</a>`;
+  const builder = `${m.baseUrl}/checkout-widget?merchant=${encodeURIComponent(to)}&currency=${currency}`;
+  return {
+    id: uid(),
+    kind: "link",
+    title: `Crypto checkout for ${short(to)}`,
+    venue: "near-intents",
+    lines: [
+      { label: "Money lands in", value: to },
+      { label: "You receive", value: "NEAR (as wNEAR via NEAR Intents, 1:1 with NEAR; plain NEAR when the customer pays in NEAR)" },
+      { label: "Amount", value: currency === "USD" ? "each customer's cart total in USD, converted to NEAR at checkout" : "each customer's cart total in NEAR" },
+      { label: "Customers pay with", value: "any crypto NEAR Intents supports: NEAR wallet, MetaMask & EVM wallets, Phantom (Solana), BTC and more" },
+    ],
+    warnings: ["Before you ship an order, confirm it on your server with /api/pay/verify (shown on the setup page). The cart total comes from your web page, so check the NEAR that actually arrived."],
+    transactions: [],
+    nearSpend: "0",
+    checkout: { url, iframe, button, widget, builder, merchant: true },
+    links: [{ label: "Setup page & live preview", href: builder }],
   };
 }
 

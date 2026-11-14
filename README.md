@@ -67,6 +67,26 @@ A merchant (or friend) asks for an **exact amount of one token on one chain**: "
 
 Same token on NEAR (`pay alice.near 5 usdc`) skips Intents entirely: it's a direct transfer with no fee. Recipients are checked before quoting: NEAR accounts must exist, EVM addresses must be well-formed, and Pip always repeats the recipient.
 
+### 🛒 Universal checkout widget (any store)
+
+Any merchant, app or e-commerce site can add a crypto checkout. **The merchant only sets a NEAR account.** Each customer pays **their cart total** with any crypto NEAR Intents supports, and **NEAR lands in the merchant's wallet**.
+
+1. **The merchant asks Pip:** `set up a crypto checkout for my store`. Pip uses the connected wallet, or the NEAR account they type (`… pay to yourshop.near`). Merchants receive NEAR, so Pip refuses EVM or Solana addresses for the merchant and explains that customers can still pay from any chain.
+2. **Pip generates the website code.** The merchant pastes it once:
+
+```html
+<script src="https://allpilot.vercel.app/checkout.js" data-merchant="yourshop.near" defer></script>
+<!-- on the cart page: the store fills in the total (USD by default) and the order id -->
+<button data-allpilot-checkout data-amount="49.50" data-ref="ORDER-1042"></button>
+```
+
+3. **The amount is the cart total**, read when the customer clicks. The store's template fills `data-amount` (Shopify `{{ cart.total_price | money_without_currency }}`, WooCommerce `WC()->cart->get_total('edit')`). A no-code site can use `data-amount-from="#cart-total"` to read the total shown on the page ("$49.50" works), and custom JS can call `Allpilot.checkout({ amount, ref })`. The button label follows the cart live ("Pay $37.50 with crypto"). Prices are in USD by default and converted to NEAR at the live price, rounded up so the merchant never gets less. `data-currency="NEAR"` prices in NEAR instead.
+4. **The customer pays with whatever they have.** A popup on the store's page shows "$37.50 = 11.2952 NEAR". The customer picks any chain and token: a NEAR wallet, **MetaMask** and other EVM wallets (Ethereum, Base, Arbitrum, BNB…), **Phantom** (Solana), or a deposit address from any other wallet (BTC and more). NEAR Intents quotes an exact-output payment, and the unused buffer is refunded to the customer.
+5. **NEAR lands in the merchant's wallet:** as wNEAR (wrapped NEAR, always 1:1) when the customer pays with other crypto, or plain NEAR when they pay in NEAR from a NEAR wallet. Nothing passes through Allpilot.
+6. **The store knows it's paid.** The page gets `allpilot:paid` with `{ ref, amountNear, usd, depositAddress, txHash, sender }`, and `allpilot:status` for every step. The store's server confirms with `GET /api/pay/verify?deposit=<depositAddress>` (Intents) or `?tx=<hash>&sender=<account>` (direct NEAR transfer). It returns `{ paid, recipient, amount, amountFormatted, token }` read from 1Click or the chain, with CORS open. The total comes from the web page, so a store should ship only when `paid` is true, the recipient is its account, and the NEAR received is at least the order's `amountNear`.
+
+The popup works on phones, follows light or dark mode, closes with ✕, Esc or a click outside, and has an "Open in new tab" fallback for wallets that won't open inside a frame. The setup page [`/checkout-widget`](https://allpilot.vercel.app/checkout-widget) has the NEAR account field (or **Connect wallet**), USD/NEAR pricing, a sample cart to try the real button, copy-ready code, Shopify/WooCommerce/no-code/JS examples and the verification steps. Fixed-amount invoices still work too: `payment link 25 usdc for order 1042`.
+
 ### 🚀 Launch a memecoin (with a picture)
 
 Tap **📎** to pick any image. It's center-cropped and shrunk **in your browser** to a ~2–7 KB WebP data URL, small enough for both launchpads' on-chain limits (JustHoot ~7 KB, nearly.trade 16 KB). Then say e.g. `launch Pip Coin $PIP on hoot`. If you don't say where, Pip asks and compares the two launchpads:
@@ -162,6 +182,7 @@ The LLM never builds transactions itself. It calls these server-side tools (`src
 | `swap_tokens` | Swap on NEAR Intents (default) or Rhea |
 | `bridge_assets` · `bridge_chains` | Bridge between NEAR and 20+ chains; list supported chains |
 | `trade_meme` · `trending_memes` | Buy/sell memecoins (JustHoot, nearly.trade, Rhea); verified + fresh launches |
+| `setup_checkout` | Store checkout: merchant NEAR account → website code; customers pay cart totals with any crypto |
 | `pay` · `create_payment_link` | Exact-amount payments to any chain; checkout links + widget |
 | `launch_token` | Launch a memecoin on JustHoot or nearly.trade (with uploaded picture) |
 | `add_liquidity` | Add liquidity to a Rhea classic pool |
@@ -276,6 +297,7 @@ Open http://localhost:3000, then:
 19. Open the checkout from step 7 and pick **Base → USDC** (or **Solana → USDC**). After the quote, the card shows **🦊 Pay with MetaMask** (or **👻 Pay with Phantom**), which asks your wallet to send exactly the quoted amount to the deposit address.
 20. Tap **🎤** and say a command, or type in another language (e.g. `lanza un token Gato $GATO en justhoot con 3% de impuesto`). Pip answers in that language.
 21. Type `swap 1 near to usdc`, then reload the page. The chat is still there, and the swap card now says *Saved quote* with **Get a fresh quote** instead of a sign button. Open **☰ → 💬 Chats**, click **＋ New chat**, ask something else, and switch back and forth between the two chats in the list.
+22. Type `set up a crypto checkout for my store, pay to intents.near` (or connect a wallet and say `create a checkout widget for my website`). You should see a 🛒 card with the website code (`data-merchant="intents.near"`, no amount in it) and a setup-page link. Try `accept crypto on my shop, send to 0x2527D02599Ba641c19FEa793cD0F167589a0f10D`: it's refused, because merchants receive in NEAR. Open the setup page, enter a sample cart total of `37.50` and click the button. The popup shows `$37.50 = … NEAR at today's price`. Pick **Base → USDC**, enter an address and **Get quote**: the card says the merchant gets exactly that NEAR and shows **🦊 Pay with MetaMask**. `curl "https://allpilot.vercel.app/api/pay/verify?deposit=<deposit address>"` answers `paid: false` until it's paid.
 
 **Without `NEAR_AI_API_KEY`** the app runs in *offline brain* mode: a small command parser that handles every typed command above (swap, buy/sell, bridge, pay, payment link, launch, add lp, supply/borrow/repay/withdraw, stake/unstake), so everything stays reproducible. Only the free-form questions (like the **Earn yield** pill) need the key. **With a key** (get one at https://cloud.near.ai), Pip understands free-form chat and calls the same tools.
 
@@ -317,6 +339,9 @@ src/
   app/api/agent-market      webhook + poll safety net
   components/useVoice.ts    🎤 speech-to-text
   lib/chats.ts              saved chat sessions (localStorage), old quotes archived on restore
+  public/checkout.js        drop-in checkout button + popup for any website (no dependencies)
+  lib/verifyPayment.ts      /api/pay/verify: was it paid? (1Click status or the NEAR tx)
+  app/checkout-widget       widget setup page with live preview
   lib/history.ts            FastNEAR holdings, top holders, tx history (with retries)
   lib/launchpads.ts         known NEAR token factories / launchpads
   lib/intents.ts            NEAR Intents 1Click client
@@ -395,6 +420,7 @@ All built during NEAR HACKATHON (git history, `main`):
 13. Any pairing: hub hops (NEAR/USDC/USDT), all Rhea pool types, two linked classic+DCL swaps, NEAR Intents fallback
 14. Shareable PnL card, every launchpad setting, MetaMask/Phantom checkout, voice & any language, NEAR Agent Market integration
 15. Chat sessions: new chat, saved conversations in the browser, old quotes locked on restore
+16. Universal checkout for any store: the merchant sets a NEAR account (connected or typed), each customer pays the cart total with any crypto, NEAR lands in the merchant's wallet; `checkout.js`, payment events, `/api/pay/verify`, setup page
 
 ## Hackathon compliance notes
 

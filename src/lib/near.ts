@@ -13,7 +13,7 @@ export const NEARLY_LAUNCHPAD = "nearlytrade.near";
 export const TGAS = 1_000_000_000_000n;
 export const ONE_YOCTO = "1";
 
-async function rpc<T>(method: string, params: unknown): Promise<T> {
+export async function rpc<T>(method: string, params: unknown): Promise<T> {
   let lastErr: unknown;
   for (const url of [...RPC_URLS, ...RPC_URLS]) {
     try {

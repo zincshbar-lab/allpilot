@@ -4,7 +4,7 @@
 import OpenAI from "openai";
 import type { ActionCard, ChatMessage, ChatResponse } from "./cards";
 import { bridge, getBalances, listBridgeChains, memeTrade, swap, trendingMemes } from "./actions";
-import { pay, paymentLink } from "./pay";
+import { merchantCheckout, pay, paymentLink } from "./pay";
 import { launchOptions, launchToken, normalizeLaunchpad } from "./launch";
 import { addLiquidity } from "./liquidity";
 import { borrow, lendingOverview, repay, supply, withdrawSupply } from "./lending";
@@ -21,7 +21,7 @@ You help the user:
 2. bridge assets between NEAR and other chains with NEAR Intents,
 3. buy or sell memecoins launched on JustHoot ("hoot") and nearly.trade ("nearly"), or listed on Rhea/Ref,
 4. pay anyone an exact amount on any chain, paying with whatever token they hold ("Pay with Intents"),
-5. create payment links / a checkout widget so others can pay them from any wallet or chain,
+5. create payment links and a universal checkout button/widget any website or store can paste in, so customers pay from any wallet or chain (the shop can confirm each payment on its server with /api/pay/verify),
 6. launch a brand-new memecoin on JustHoot or nearly.trade (with a token picture the user uploads),
 7. add liquidity to Rhea (Ref) classic pools,
 8. lend & borrow on Rhea Lending (formerly Burrow): supply, borrow, repay, withdraw — always with the health factor,
@@ -40,6 +40,7 @@ Rules:
 - Formatting: plain short lines only. **bold** and \`code\` are fine; never use tables, headings (#) or long lists — the chat bubble can't render them.
 - For payments, the recipient gets EXACTLY the amount; the payer may pay in another token/chain. Always repeat the recipient so the user can double-check it. Never guess a recipient address.
 - A payment link with no recipient goes to the connected wallet; if none is connected, ask who should receive.
+- Store checkout (setup_checkout): the merchant only gives a NEAR account, or uses the connected wallet. Merchants receive NEAR, so never accept an EVM or Solana address for the merchant; explain that customers can still pay from any chain. The amount is each customer's cart total, filled in by the website, not set by the merchant.
 - Token launches: you need launchpad, name and ticker. If the launchpad isn't given, ask which one, briefly comparing them:
   JustHoot = opens at a $5,000 value, ~0.06–0.1 NEAR cost, ticker 2–10 chars, description/links added on its site later;
   nearly.trade = ~0.2 NEAR cost, ticker 1–12 chars, description + website/twitter/telegram stored on-chain.
@@ -187,8 +188,23 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "setup_checkout",
+      description:
+        "Set up a universal crypto checkout for a merchant's store, app or website. The merchant gives ONLY a NEAR account (or uses the connected wallet); Pip returns code to paste into the site once. For every order the site passes the customer's cart total; the customer pays with any crypto NEAR Intents supports (NEAR wallet, MetaMask/EVM, Phantom/Solana, BTC…) and the merchant receives NEAR. Use for: accept crypto on my store/shop/website, checkout button/widget for my site, crypto payments for my business.",
+      parameters: {
+        type: "object",
+        properties: {
+          merchant: { type: "string", description: "The merchant's NEAR account (e.g. shop.near). Omit to use the connected wallet. Never an EVM/Solana address." },
+          currency: { type: "string", enum: ["USD", "NEAR"], description: "How the store prices its cart. USD (default) is converted to NEAR at checkout." },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "create_payment_link",
-      description: "Create a shareable checkout link + embeddable 'Pay with Intents' widget. Anyone can pay it with any token on any chain; the receiver gets exactly the amount.",
+      description: "Create a shareable checkout link plus a drop-in checkout button (one <script> + one <button>) that any shop, app or e-commerce site can paste in. It opens a popup where the customer pays with any token on any chain from any wallet (NEAR, MetaMask, Phantom or a deposit address); the receiver gets exactly the amount via NEAR Intents. Use this whenever someone wants to accept payments, a checkout, a pay button or a widget for their site.",
       parameters: {
         type: "object",
         properties: {
@@ -377,6 +393,13 @@ async function runTool(name: string, args: Record<string, unknown>, ctx: Ctx): P
       });
       ctx.cards.push(c);
       return cardSummary(c);
+    }
+    case "setup_checkout": {
+      const merchant = args.merchant ? String(args.merchant) : ctx.accountId;
+      if (!merchant) return { error: "Which NEAR account should receive the payments? Connect your wallet, or type it (like yourshop.near)." };
+      const c = await merchantCheckout({ merchant, currency: args.currency === "NEAR" ? "NEAR" : "USD", baseUrl: ctx.baseUrl ?? "http://localhost:3000" });
+      ctx.cards.push(c);
+      return { ok: true, merchant: c.lines[0].value, note: "Card shows the website code, a no-code link and the setup page. Merchant receives NEAR; customers pay with any crypto." };
     }
     case "create_payment_link": {
       const to = args.to ? String(args.to) : ctx.accountId;
@@ -628,8 +651,17 @@ export async function offline(messages: ChatMessage[], ctx: Ctx, opts?: { trades
       await runTool("add_liquidity", { amount_a: m[1], token_a: m[2], token_b: m[3] }, ctx);
       return reply("Liquidity card ready 💧 The second token is matched to the pool's ratio. Sign the steps in order.");
     }
+    // set up checkout [for shop.near] | crypto checkout for my store | accept crypto on my website
+    if (/\b(set\s*up|create|make|generate|get|add|build)\b.*\b(checkout|payment)\s*(widget|button|for\s+my|on\s+my)|\b(store|shop|website|site)\s+checkout\b|\baccept\s+crypto\b|\bcheckout\s+widget\b/.test(text) && !/\b\d+(\.\d+)?\s*[a-z$]/.test(text.replace(/[a-z0-9_.-]+\.near|0x[0-9a-f]+|[0-9a-f]{64}/g, ""))) {
+      const acct = text.match(/\b((?:[a-z0-9_-]+\.)+near|[0-9a-f]{64})\b/)?.[1];
+      const evm = /0x[0-9a-f]{40}/.test(text);
+      if (evm && !acct) return reply("Merchants receive in NEAR, so I need a NEAR account (like yourshop.near) rather than an 0x address. Your customers can still pay from Ethereum, Base, Solana, BTC and more 🌍");
+      const out = await runTool("setup_checkout", { merchant: acct, currency: /\bin\s+near\b|priced?\s+in\s+near/.test(text) ? "NEAR" : "USD" }, ctx);
+      if ((out as { error?: string }).error) return reply((out as { error: string }).error);
+      return reply("Your store checkout is ready 🛒 Paste the code into your site once. Each customer pays their cart total with any crypto, and NEAR lands in your wallet.");
+    }
     // payment link 5 usdc [to alice.near] [on base] [for order 42]
-    if ((m = text.match(new RegExp(`(?:payment|pay|checkout|invoice)\\s+link\\s+(?:for\\s+)?${NUM}\\s+${TOK}(?:\\s+to\\s+([^\\s]+))?(?:\\s+on\\s+([a-z]+))?(?:\\s+for\\s+(.+))?$`)))) {
+    if ((m = text.match(new RegExp(`(?:payment|pay|checkout|invoice)\\s+(?:link|button|widget)\\s+(?:for\\s+)?${NUM}\\s+${TOK}(?:\\s+to\\s+([^\\s]+))?(?:\\s+on\\s+([a-z]+))?(?:\\s+for\\s+(.+))?$`)))) {
       const [, amount, token, to, chain, memo] = m;
       const out = await runTool("create_payment_link", { amount, token, to, chain, memo: memo ? (messages.at(-1)?.content ?? "").slice(-memo.length) : undefined }, ctx);
       if ((out as { error?: string }).error) return reply((out as { error: string }).error);

@@ -47,7 +47,7 @@ export type ActionCard = {
   /** Shareable image (PnL card): PNG url, share page, X intent. */
   share?: { image: string; page: string; xUrl: string };
   /** Payment links: shareable checkout URL + embed snippets. */
-  checkout?: { url: string; iframe: string; button: string };
+  checkout?: { url: string; iframe: string; button: string; widget?: string; builder?: string; merchant?: boolean };
   needsWallet?: boolean;
   links?: { label: string; href: string }[];
   expiresAt?: number;

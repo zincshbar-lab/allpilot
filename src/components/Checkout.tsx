@@ -18,11 +18,15 @@ type Asset = { assetId: string; symbol: string; chain: string; chainName: string
 export default function Checkout() {
   const sp = useSearchParams();
   const to = sp.get("to") ?? "";
-  const amount = sp.get("amount") ?? "";
+  const amountParam = sp.get("amount") ?? "";
+  // merchant checkout: the shop passes its cart total in USD; the merchant receives that value in NEAR
+  const usd = Number(sp.get("usd")) || 0;
   const token = (sp.get("token") ?? "").toUpperCase();
   const chain = sp.get("chain") ?? "near";
   const memo = sp.get("memo") ?? "";
   const embed = sp.get("embed") === "1";
+  const widget = embed && sp.get("widget") === "1";
+  const ref = sp.get("ref") ?? undefined;
 
   const wallet = useWallet();
   const policy = useSyncExternalStore(subscribePolicy, getPolicy, getServerPolicy);
@@ -33,6 +37,16 @@ export default function Checkout() {
   const [card, setCard] = useState<ActionCard>();
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+
+  // widget mode: tell the merchant's page (checkout.js) what's happening. Payment data here is public
+  // (deposit address, tx hash); the merchant must still confirm on its server via /api/pay/verify.
+  const post = (type: string, data: Record<string, unknown> = {}) => {
+    if (widget && window.parent !== window) window.parent.postMessage({ source: "allpilot-checkout", type, ref, to, token, chain, ...data }, "*");
+  };
+  useEffect(() => {
+    post("status", { status: "ready" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on load
+  }, []);
 
   useEffect(() => {
     fetch("/api/pay/assets", { method: "POST" })
@@ -46,6 +60,10 @@ export default function Checkout() {
     assets.forEach((a) => m.set(a.chain, a.chainName));
     return [...m.entries()].sort((a, b) => (a[0] === "near" ? -1 : b[0] === "near" ? 1 : a[1].localeCompare(b[1])));
   }, [assets]);
+  const nearPrice = assets.find((a) => a.chain === "near" && a.symbol === "NEAR")?.price ?? 0;
+  // round up to 4 decimals so the merchant never receives less than the cart total
+  const amount = amountParam || (usd > 0 && nearPrice > 0 && token === "NEAR" ? String(Math.ceil((usd / nearPrice) * 1e4) / 1e4) : "");
+  const pricing = !amountParam && usd > 0 && !nearPrice && !error;
   const tokensOnChain = useMemo(() => assets.filter((a) => a.chain === payChain), [assets, payChain]);
   // default: same token as requested if available on that chain, else the chain's first token
   const symbol = paySymbol && tokensOnChain.some((t) => t.symbol === paySymbol) ? paySymbol : (tokensOnChain.find((t) => t.symbol === token) ?? tokensOnChain[0])?.symbol;
@@ -65,12 +83,26 @@ export default function Checkout() {
         body: JSON.stringify({ to, amount, token, chain, memo, payWithAssetId: selected.assetId, accountId: wallet.accountId, refundTo }),
       }).then((x) => x.json());
       if (r.error) setError(r.error);
-      else setCard(r.card);
+      else {
+        setCard(r.card);
+        post("status", { status: "quoted", amountNear: amount, usd: usd || undefined, payWith: `${selected.symbol} on ${selected.chainName}`, depositAddress: r.card?.intents?.depositAddress, route: r.card?.venue === "direct" ? "direct" : "intents" });
+      }
     } catch {
       setError("Network hiccup, please try again.");
     } finally {
       setBusy(false);
     }
+  }
+
+  if (pricing) {
+    return (
+      <div className="flex-1 grid place-items-center p-4">
+        <div className="text-center">
+          <Pip size={56} mood="think" className="mx-auto bob" />
+          <p className="mt-3 text-sm text-ink-soft">Getting the live NEAR price for ${usd.toFixed(2)}…</p>
+        </div>
+      </div>
+    );
   }
 
   if (!valid) {
@@ -99,9 +131,12 @@ export default function Checkout() {
       <section className="card overflow-hidden">
         <div className="bg-pink-soft px-5 py-4">
           <p className="text-xs font-semibold text-ink-soft">💌 Pay with Intents</p>
-          <p className="text-3xl font-bold mt-1 break-words">
-            {amount} {token}
-          </p>
+          <p className="text-3xl font-bold mt-1 break-words">{usd > 0 && !amountParam ? `$${usd.toFixed(2)}` : `${amount} ${token}`}</p>
+          {usd > 0 && !amountParam && (
+            <p className="text-sm mt-0.5">
+              = <b>{amount} NEAR</b> at today&apos;s price
+            </p>
+          )}
           <p className="text-sm mt-1 break-all">
             to <span className="font-mono text-xs">{to}</span> on {chains.find((c) => c[0] === chain)?.[1] ?? chain.toUpperCase()}
           </p>
@@ -150,7 +185,24 @@ export default function Checkout() {
         </div>
       </section>
 
-      {card && <ActionCardView card={card} accountId={wallet.accountId} policy={policy} onConnect={wallet.connect} signAndSend={wallet.signAndSend} />}
+      {card && (
+        <ActionCardView
+          card={card}
+          accountId={wallet.accountId}
+          policy={policy}
+          onConnect={wallet.connect}
+          signAndSend={wallet.signAndSend}
+          onProgress={(p) => {
+            if (!widget || (p.status === "idle" && !p.intentState)) return;
+            const direct = card.venue === "direct";
+            const info = { status: p.intentState ?? p.status, amountNear: amount, usd: usd || undefined, depositAddress: p.depositAddress, txHash: p.txHashes.at(-1), sender: wallet.accountId };
+            post("status", info);
+            // paid = NEAR Intents settled, or a direct NEAR transfer went through
+            if (p.intentState === "SUCCESS" || (direct && p.status === "done")) post("paid", { ...info, status: "paid" });
+            else if (p.intentState === "REFUNDED" || p.intentState === "FAILED") post("status", { ...info, status: "failed" });
+          }}
+        />
+      )}
 
       <p className="mt-4 text-[11px] text-ink-soft text-center">
         Settled by NEAR Intents · the receiver gets exactly {amount} {token} · unused buffer is refunded{embed ? "" : " · Not financial advice"}

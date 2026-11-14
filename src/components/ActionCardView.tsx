@@ -40,6 +40,7 @@ export function ActionCardView({
   signAndSend,
   onAsk,
   refreshPrompt,
+  onProgress,
 }: {
   card: ActionCard;
   accountId?: string;
@@ -50,6 +51,8 @@ export function ActionCardView({
   onAsk?: (text: string) => void;
   /** For cards restored from a saved chat: the message that produced it, to fetch a fresh quote. */
   refreshPrompt?: string;
+  /** Payment progress (used by the embeddable checkout to tell the merchant's page). */
+  onProgress?: (p: { status: string; intentState?: string; txHashes: string[]; depositAddress?: string }) => void;
 }) {
   const [status, setStatus] = useState<Status>("idle");
   const [hashes, setHashes] = useState<string[]>([]);
@@ -65,6 +68,10 @@ export function ActionCardView({
   const guard = checkCard(card, policy, accountId, now);
   const external = card.intents?.externalDeposit;
   const archived = !!card.archived;
+  useEffect(() => {
+    onProgress?.({ status, intentState, txHashes: hashes, depositAddress: card.intents?.depositAddress });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- report when the payment state changes, not when the callback identity does
+  }, [status, intentState, hashes, card.intents?.depositAddress]);
   const signable = card.transactions.length > 0 && !archived;
   const expired = !!card.expiresAt && now > card.expiresAt;
 
@@ -322,9 +329,28 @@ function CopyRow({ label, value, mono = true }: { label: string; value: string; 
 function CheckoutSnippets({ checkout }: { checkout: NonNullable<ActionCard["checkout"]> }) {
   return (
     <div className="mx-4 mb-3 rounded-2xl bg-pink-soft px-3 py-3 space-y-3">
-      <CopyRow label="Share this link — the payer picks any token on any chain" value={checkout.url} />
-      <CopyRow label="Embed on a website (checkout widget)" value={checkout.iframe} />
-      <CopyRow label="…or a “Pay with Intents” button" value={checkout.button} />
+      {checkout.merchant && checkout.widget && (
+        <>
+          <CopyRow label="🛒 Paste into your website once. Your store fills in the cart total (data-amount) and order id (data-ref) for each customer" value={checkout.widget} />
+          <CopyRow label="No-code? Link each order like this (change the amount and memo)" value={checkout.url} />
+          {checkout.builder && (
+            <a href={checkout.builder} target="_blank" rel="noreferrer" className="inline-block text-xs underline">
+              Setup page: live preview, Shopify/WordPress tips & how to confirm payments ↗
+            </a>
+          )}
+        </>
+      )}
+      {!checkout.merchant && <CopyRow label="Share this link — the payer picks any token on any chain" value={checkout.url} />}
+      {!checkout.merchant && checkout.widget && (
+        <CopyRow label="🛒 Checkout button for any website — paste into your store's HTML. Opens a popup; customers pay from any wallet on any chain" value={checkout.widget} />
+      )}
+      {!checkout.merchant && <CopyRow label="Embed the checkout inline (iframe)" value={checkout.iframe} />}
+      {!checkout.merchant && <CopyRow label="…or a simple “Pay with Intents” link button" value={checkout.button} />}
+      {!checkout.merchant && checkout.builder && (
+        <a href={checkout.builder} target="_blank" rel="noreferrer" className="inline-block text-xs underline">
+          Widget setup, live preview & how to confirm payments on your server ↗
+        </a>
+      )}
     </div>
   );
 }
