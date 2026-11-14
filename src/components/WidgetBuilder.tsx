@@ -20,7 +20,7 @@ function Code({ code, label, onCopy }: { code: string; label: string; onCopy?: (
         <button
           className="btn shrink-0 bg-surface border-2 border-line px-3 py-1 text-xs"
           onClick={() => {
-            navigator.clipboard?.writeText(code);
+            navigator.clipboard?.writeText(code).catch(() => {});
             onCopy?.();
             setCopied(true);
             setTimeout(() => setCopied(false), 1500);

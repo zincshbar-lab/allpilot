@@ -199,7 +199,7 @@ export function ActionCardView({
             <a href={card.share.image} download="allpilot-pnl.png" className="btn bg-surface border-2 border-line px-4 py-2 text-sm">
               Download image
             </a>
-            <button className="btn bg-surface border-2 border-line px-4 py-2 text-sm" onClick={() => navigator.clipboard?.writeText(card.share!.page)}>
+            <button className="btn bg-surface border-2 border-line px-4 py-2 text-sm" onClick={() => void navigator.clipboard?.writeText(card.share!.page).catch(() => {})}>
               Copy link
             </button>
           </div>
@@ -224,7 +224,7 @@ export function ActionCardView({
           <p>Send exactly <b>{external.amount} {external.symbol}</b> on <b>{external.chain}</b> to:</p>
           <div className="mt-2 flex items-center gap-2">
             <code className="flex-1 min-w-0 break-all rounded-xl bg-surface px-2 py-1.5 text-xs border-2 border-line">{card.intents.depositAddress}</code>
-            <button className="btn bg-surface border-2 border-line px-3 py-1.5 text-xs" onClick={() => navigator.clipboard?.writeText(card.intents!.depositAddress)}>Copy</button>
+            <button className="btn bg-surface border-2 border-line px-3 py-1.5 text-xs" onClick={() => void navigator.clipboard?.writeText(card.intents!.depositAddress).catch(() => {})}>Copy</button>
           </div>
           {card.intents.depositMemo && <p className="mt-1 text-xs">Memo (required): <code>{card.intents.depositMemo}</code></p>}
           {external.amountBase && !card.intents.depositMemo && (EVM_CHAIN_IDS[external.chainCode ?? ""] || external.chainCode === "sol") && (
@@ -314,7 +314,7 @@ function CopyRow({ label, value, mono = true }: { label: string; value: string; 
         <button
           className="btn bg-surface border-2 border-line px-3 py-1.5 text-xs shrink-0"
           onClick={() => {
-            navigator.clipboard?.writeText(value);
+            navigator.clipboard?.writeText(value).catch(() => {});
             setCopied(true);
             setTimeout(() => setCopied(false), 1500);
           }}
