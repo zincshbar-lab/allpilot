@@ -331,8 +331,8 @@ function CheckoutSnippets({ checkout }: { checkout: NonNullable<ActionCard["chec
     <div className="mx-4 mb-3 rounded-2xl bg-pink-soft px-3 py-3 space-y-3">
       {checkout.merchant && checkout.widget && (
         <>
-          <CopyRow label="🛒 Paste into your website once. Your store fills in the cart total (data-amount) and order id (data-ref) for each customer" value={checkout.widget} />
-          <CopyRow label="No-code? Link each order like this (change the amount and memo)" value={checkout.url} />
+          <CopyRow label="🛒 Paste into your website once. For each order your store sets data-amount to the cart total (data-ref with the order id is optional)" value={checkout.widget} />
+          <CopyRow label="No-code? Add the order total to the end of this link" value={checkout.url} />
           {checkout.builder && (
             <a href={checkout.builder} target="_blank" rel="noreferrer" className="inline-block text-xs underline">
               Setup page: live preview, Shopify/WordPress tips & how to confirm payments ↗

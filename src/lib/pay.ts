@@ -252,12 +252,13 @@ export async function merchantCheckout(m: MerchantInput): Promise<ActionCard> {
   const attr = (v: string) => v.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
   const widget =
     `<script src="${m.baseUrl}/checkout.js" data-merchant="${attr(to)}"${currency === "NEAR" ? ' data-currency="NEAR"' : ""} defer></script>\n\n` +
-    `<!-- at checkout: put the cart total in data-amount${currency === "USD" ? " (USD)" : " (NEAR)"} and your order id in data-ref -->\n` +
-    `<button data-allpilot-checkout data-amount="49.50" data-ref="ORDER-1042"></button>`;
+    `<!-- on your checkout page: your store sets data-amount to the cart total${currency === "USD" ? " (USD)" : " (NEAR)"}; data-ref (order id) is optional -->\n` +
+    `<button data-allpilot-checkout></button>`;
   const amountKey = currency === "USD" ? "usd" : "amount";
-  const url = `${m.baseUrl}/pay?to=${encodeURIComponent(to)}&token=NEAR&chain=near&${amountKey}=49.50&memo=Order%201042`;
-  const iframe = `<iframe src="${url}&embed=1" width="380" height="600" style="border:0;border-radius:24px" title="Pay with Intents"></iframe>`;
-  const button = `<a href="${url}" target="_blank" rel="noopener" style="display:inline-block;padding:12px 20px;border-radius:999px;background:#ff8fb1;color:#fff;font-weight:600;text-decoration:none;font-family:sans-serif">Pay with crypto ✨</a>`;
+  // no-code: append the order total to the end of this link
+  const url = `${m.baseUrl}/pay?to=${encodeURIComponent(to)}&token=NEAR&chain=near&${amountKey}=`;
+  const iframe = "";
+  const button = "";
   const builder = `${m.baseUrl}/checkout-widget?merchant=${encodeURIComponent(to)}&currency=${currency}`;
   return {
     id: uid(),

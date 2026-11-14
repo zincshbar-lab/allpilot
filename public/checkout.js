@@ -182,7 +182,18 @@
       if (el.tagName !== "BUTTON") { el.setAttribute("role", "button"); el.tabIndex = 0; }
     }
     if (el.tagName === "BUTTON" && !el.getAttribute("type")) el.setAttribute("type", "button");
-    var go = function (e) { e.preventDefault(); checkout(optsFrom(el), el); };
+    var go = function (e) {
+      e.preventDefault();
+      checkout(optsFrom(el), el).catch(function () {
+        // misconfigured (no cart total / no merchant): say so on the styled button instead of doing nothing
+        if (!el.classList.contains("apc-btn") || el.__apcMsg) return;
+        el.__apcMsg = true;
+        var label = el.children[1], tip = el.children[2], a = label.textContent, b = tip.textContent;
+        label.textContent = "Checkout isn't ready";
+        tip.textContent = "no cart total yet";
+        setTimeout(function () { label.textContent = a; tip.textContent = b; el.__apcMsg = false; }, 2500);
+      });
+    };
     el.addEventListener("click", go);
     el.addEventListener("keydown", function (e) { if (el.tagName !== "BUTTON" && (e.key === "Enter" || e.key === " ")) go(e); });
   }

@@ -67,7 +67,7 @@ export default function WidgetBuilder() {
   const snippet = useMemo(
     () =>
       `<!-- 1. once, anywhere on your site -->\n<script src="${origin}/checkout.js" data-merchant="${m}"${currency === "NEAR" ? ' data-currency="NEAR"' : ""} defer></script>\n\n` +
-      `<!-- 2. on your cart / checkout page: your store fills in the total (${unit}) and order id -->\n<button data-allpilot-checkout data-amount="49.50" data-ref="ORDER-1042"></button>`,
+      `<!-- 2. on your checkout page: your store sets data-amount to the cart total (${unit}); data-ref (order id) is optional -->\n<button data-allpilot-checkout></button>`,
     [origin, m, currency, unit],
   );
   const platforms = `<!-- Shopify (cart template / custom liquid) -->
