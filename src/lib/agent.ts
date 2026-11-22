@@ -525,7 +525,17 @@ export async function chat(messages: ChatMessage[], accountId?: string, baseUrl?
     timeout: 30_000,
     maxRetries: 1,
   });
-  const model = process.env.NEAR_AI_MODEL ?? "deepseek/deepseek-v4.1-flash";
+  // If a model is down on NEAR AI ("model is currently unavailable"), try the next one before going offline.
+  const models = [
+    ...new Set([
+      process.env.NEAR_AI_MODEL ?? "deepseek/deepseek-v4.1-flash",
+      "deepseek/deepseek-v4.1-flash-1017",
+      "openai/gpt-5.4-mini",
+      "google/gemini-3.5-flash",
+      "z-ai/glm-5.3-flash",
+    ]),
+  ];
+  let mi = 0;
   const convo: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     {
       role: "system",
@@ -541,12 +551,19 @@ export async function chat(messages: ChatMessage[], accountId?: string, baseUrl?
   for (let step = 0; step < 5; step++) {
     let res: OpenAI.Chat.Completions.ChatCompletion;
     try {
-      res = await client.chat.completions.create({ model, messages: convo, tools, tool_choice: "auto", temperature: 0.3 });
+      res = await client.chat.completions.create({ model: models[mi], messages: convo, tools, tool_choice: "auto", temperature: 0.3 });
     } catch (e) {
+      if (mi < models.length - 1) {
+        console.warn(`NEAR AI model ${models[mi]} failed, trying ${models[mi + 1]}:`, e instanceof Error ? e.message : e);
+        mi++;
+        step--;
+        continue;
+      }
       // NEAR AI unavailable (no credits, outage, bad key): keep the app working with the offline parser.
       if (step > 0 && ctx.cards.length) return { reply: "Here's what I found! ✨", cards: ctx.cards, mode: "near-ai" };
       console.warn("NEAR AI call failed, using offline brain:", e instanceof Error ? e.message : e);
-      return (await offline(messages, { accountId, cards: [], baseUrl, icon }))!;
+      const off = (await offline(messages, { accountId, cards: [], baseUrl, icon }))!;
+      return { ...off, reply: off.reply.replace("I'm in offline mode (no NEAR AI key set)", "NEAR AI is busy right now, so I'm in simple mode") };
     }
     const msg = res.choices[0].message;
     if (!msg.tool_calls?.length) return { reply: msg.content ?? "", cards: ctx.cards, mode: "near-ai" };
